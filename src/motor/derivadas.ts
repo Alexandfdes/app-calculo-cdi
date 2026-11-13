@@ -128,7 +128,8 @@ function aplicarRegra(e: Expr, x: string): { regra: Regra; expansao: Expr } {
     case 'log':
       return comCadeia(e.arg, div(num(1), mul(e.arg, func('ln', e.base))), 'função elementar');
     case 'derivada':
-      throw new Error('Marcador de derivada não pode aparecer na entrada.');
+    case 'integral':
+      throw new Error('Marcador do passo a passo não pode aparecer na entrada.');
   }
 }
 
@@ -170,6 +171,7 @@ function temPendencia(e: Expr): boolean {
     case 'num':
     case 'var':
     case 'const':
+    case 'integral':
       return false;
     case 'soma':
     case 'sub':
@@ -195,6 +197,7 @@ function resolver(e: Expr, d: (u: Expr) => Expr): Expr {
     case 'num':
     case 'var':
     case 'const':
+    case 'integral':
       return e;
     case 'soma':
     case 'sub':

@@ -1,0 +1,263 @@
+/**
+ * Integral definida pelo Teorema Fundamental do Cálculo (Aula 4, quadro 10):
+ * ∫ de a a b de f(x) dx = F(b) − F(a), com F primitiva de f.
+ *
+ * O slide omite uma hipótese do TFC: f contínua em [a, b]. Aqui ela é conferida. Onde f não
+ * existe dentro do intervalo, a integral é imprópria: converge se a primitiva tem valor ali
+ * e diverge se a primitiva também explode. É o caso de ∫ de −1 a 1 de 1/x², em que a conta
+ * ingênua F(1) − F(−1) dá −2.
+ *
+ * Com |f| (área geométrica, ou distância percorrida), o intervalo é cortado onde f troca de
+ * sinal e cada trecho entra com o seu módulo.
+ *
+ * Onde procurar os pontos sem valor vem da estrutura da expressão: denominadores, cos(u) em
+ * tg e sec, sen(u) em cotg e csc, argumento do ln. Os pontos em si são achados numericamente.
+ */
+import { ErroDeEntrada, avaliar, contem, func, lerExpressao, num, paraTexto } from './expressao';
+import type { Expr } from './expressao';
+import { integrar } from './integrais';
+import type { ResultadoIntegral } from './integrais';
+
+export interface ResultadoIntegralDefinida {
+  entrada: Expr;
+  a: Expr;
+  b: Expr;
+  /** A primitiva usada no TFC, com o passo a passo. Com |f|, é a primitiva de f. */
+  primitiva: ResultadoIntegral;
+  /** Pontos de [a, b] onde o integrando não existe; vazio quando o TFC vale direto. */
+  descontinuidades: number[];
+  /** Só com |f|: onde f troca de sinal e o intervalo foi cortado. */
+  cortes: number[];
+  valor: number | 'diverge';
+}
+
+/** Distância abaixo da qual dois pontos são o mesmo; também a vizinhança de um ponto sem valor. */
+const FOLGA = 1e-6;
+/** Em quantas partes o intervalo é dividido na busca de zeros. */
+const DIVISOES = 4000;
+
+/** Limites como número (0, Math.PI) ou como texto ("0", "pi", "2*pi", "e"). */
+export function integralDefinida(
+  entrada: string | Expr,
+  a: number | string,
+  b: number | string,
+  x = 'x',
+): ResultadoIntegralDefinida {
+  const f = typeof entrada === 'string' ? lerExpressao(entrada, x) : entrada;
+  const [exprA, va] = limiteDeIntegracao(a, x);
+  const [exprB, vb] = limiteDeIntegracao(b, x);
+  const [lo, hi] = va <= vb ? [va, vb] : [vb, va];
+  const comModulo = f.tipo === 'func' && f.nome === 'abs';
+  const g = f.tipo === 'func' && f.nome === 'abs' ? f.arg : f;
+  const primitiva = integrar(g, x);
+  const F = (t: number): number => avaliar(primitiva.resultado, { [x]: t });
+  const descontinuidades = pontosSemValor(g, x, lo, hi);
+  exigirValor(g, x, lo, hi, descontinuidades);
+  const comum = { entrada: f, a: exprA, b: exprB, primitiva, descontinuidades };
+
+  if (comModulo) {
+    if (descontinuidades.length > 0) {
+      throw new ErroDeEntrada(`Com módulo, o motor só calcula a área quando ${paraTexto(g)} existe em todo o intervalo.`);
+    }
+    const cortes = zeros((t) => avaliar(g, { [x]: t }), lo, hi).filter((c) => c - lo > FOLGA && hi - c > FOLGA);
+    const pontos = [lo, ...cortes, hi];
+    const area = pontos.slice(1).reduce((total, t, i) => total + Math.abs(F(t) - F(pontos[i]!)), 0);
+    return { ...comum, cortes, valor: va <= vb ? area : -area };
+  }
+
+  const explode = descontinuidades.some((c) => pontosSemValor(primitiva.resultado, x, c - FOLGA, c + FOLGA).length > 0);
+  if (explode) return { ...comum, cortes: [], valor: 'diverge' };
+  const valor = F(vb) - F(va);
+  if (Number.isNaN(valor)) {
+    throw new ErroDeEntrada(`Não consegui calcular F(b) − F(a) com F(${x}) = ${paraTexto(primitiva.resultado)}.`);
+  }
+  return { ...comum, cortes: [], valor };
+}
+
+/** O cálculo em texto, uma linha por etapa: a primitiva, a descontinuidade ou os cortes, e o TFC. */
+export function descreverIntegralDefinida(r: ResultadoIntegralDefinida): string[] {
+  const x = r.primitiva.passos[0]?.variavel ?? 'x';
+  const [va, vb] = [avaliar(r.a), avaliar(r.b)];
+  const intervalo = `[${numeroBonito(Math.min(va, vb))}, ${numeroBonito(Math.max(va, vb))}]`;
+  const f = paraTexto(r.entrada);
+  const g = paraTexto(r.primitiva.entrada);
+  const F = (t: number): number => avaliar(r.primitiva.resultado, { [x]: t });
+  const linhas = [`Primitiva de ${g}: F(${x}) = ${paraTexto(r.primitiva.resultado)}`];
+  const pontos = (lista: number[]): string => lista.map(numeroBonito).join(', ');
+
+  if (r.valor === 'diverge') {
+    linhas.push(`${f} não existe em ${x} = ${pontos(r.descontinuidades)}, dentro de ${intervalo}: o TFC pede f contínua em [a, b].`);
+    linhas.push(`F também não tem valor em ${x} = ${pontos(r.descontinuidades)}: a integral imprópria diverge.`);
+    return linhas;
+  }
+
+  if (r.entrada.tipo === 'func' && r.entrada.nome === 'abs') {
+    if (r.cortes.length > 0) linhas.push(`${g} troca de sinal em ${x} = ${pontos(r.cortes)}: o intervalo é cortado aí.`);
+    const marcos = [Math.min(va, vb), ...r.cortes, Math.max(va, vb)];
+    const trechos = marcos.slice(1).map((t, i) => `|F(${numeroBonito(t)}) - F(${numeroBonito(marcos[i]!)})|`);
+    linhas.push(`Área = ${trechos.join(' + ')} = ${numeroBonito(Math.abs(r.valor))}`);
+    if (va > vb) linhas.push(`Com os limites trocados, o sinal inverte: ${numeroBonito(r.valor)}`);
+    return linhas;
+  }
+
+  if (r.descontinuidades.length > 0) {
+    linhas.push(`${f} não existe em ${x} = ${pontos(r.descontinuidades)}, mas F tem valor aí: a integral imprópria converge.`);
+  }
+  const [Fa, Fb] = [F(va), F(vb)];
+  const subtraendo = Fa < 0 ? `(${numeroBonito(Fa)})` : numeroBonito(Fa);
+  linhas.push(`TFC: F(${textoDoLimite(r.b)}) - F(${textoDoLimite(r.a)}) = ${numeroBonito(Fb)} - ${subtraendo} = ${numeroBonito(r.valor)}`);
+  return linhas;
+}
+
+// ─── Limites, continuidade e zeros ─────────────────────────────────────────────
+
+function limiteDeIntegracao(limite: number | string, x: string): [Expr, number] {
+  const expr = typeof limite === 'number' ? num(limite) : lerExpressao(limite, x);
+  if (contem(expr, x)) throw new ErroDeEntrada(`O limite de integração não pode depender de ${x}.`);
+  const valor = avaliar(expr);
+  if (!Number.isFinite(valor)) {
+    throw new ErroDeEntrada('O limite de integração precisa ser um número real; integrais até o infinito ficam de fora.');
+  }
+  return [expr, valor];
+}
+
+/** Pontos de [lo, hi] onde e não existe: zeros de denominadores, de cos(u) em tg e sec, de sen(u) em cotg e csc, do argumento do ln. */
+function pontosSemValor(e: Expr, v: string, lo: number, hi: number): number[] {
+  const pontos: number[] = [];
+  const zerosDe = (h: Expr): void => {
+    if (contem(h, v)) pontos.push(...zeros((t) => avaliar(h, { [v]: t }), lo, hi));
+  };
+  const visitar = (n: Expr): void => {
+    switch (n.tipo) {
+      case 'div':
+        zerosDe(n.b);
+        visitar(n.a);
+        visitar(n.b);
+        return;
+      case 'pot':
+        if (!contem(n.exp, v) && avaliar(n.exp) < 0) zerosDe(n.base);
+        visitar(n.base);
+        visitar(n.exp);
+        return;
+      case 'func':
+        if (n.nome === 'ln') zerosDe(n.arg);
+        if (n.nome === 'tg' || n.nome === 'sec') zerosDe(func('cos', n.arg));
+        if (n.nome === 'cotg' || n.nome === 'csc') zerosDe(func('sen', n.arg));
+        visitar(n.arg);
+        return;
+      case 'log':
+        zerosDe(n.arg);
+        visitar(n.arg);
+        return;
+      case 'soma':
+      case 'sub':
+      case 'mul':
+        visitar(n.a);
+        visitar(n.b);
+        return;
+      case 'neg':
+        visitar(n.a);
+        return;
+      default:
+        return;
+    }
+  };
+  visitar(e);
+  return unicos(pontos);
+}
+
+/** Recusa a integral quando o integrando não tem valor real em parte do intervalo, como √x em [−1, 1]. */
+function exigirValor(e: Expr, v: string, lo: number, hi: number, excecoes: number[]): void {
+  const n = 400;
+  for (let i = 0; i <= n; i++) {
+    const t = i === n ? hi : lo + ((hi - lo) * i) / n;
+    if (excecoes.some((c) => Math.abs(t - c) < FOLGA)) continue;
+    if (Number.isNaN(avaliar(e, { [v]: t }))) {
+      const intervalo = `[${numeroBonito(lo)}, ${numeroBonito(hi)}]`;
+      throw new ErroDeEntrada(`${paraTexto(e)} não tem valor real em ${v} = ${numeroBonito(t)}, dentro de ${intervalo}: essa integral definida não existe.`);
+    }
+  }
+}
+
+/**
+ * Zeros de h em [lo, hi]: trocas de sinal, refinadas por bisseção, e zeros sem troca de sinal
+ * (como x² em 0), achados como mínimos de |h| que chegam a zero.
+ */
+function zeros(h: (t: number) => number, lo: number, hi: number): number[] {
+  const xs = Array.from({ length: DIVISOES + 1 }, (_, i) => (i === DIVISOES ? hi : lo + ((hi - lo) * i) / DIVISOES));
+  const ys = xs.map(h);
+  const escala = ys.reduce((maior, y) => (Number.isFinite(y) ? Math.max(maior, Math.abs(y)) : maior), 0);
+  const achados: number[] = [];
+  for (let i = 0; i < xs.length; i++) {
+    const t = xs[i]!;
+    const y = ys[i]!;
+    const [antes, depois] = [ys[i - 1], ys[i + 1]];
+    if (Number.isNaN(y)) continue;
+    if (y === 0) {
+      achados.push(t);
+      continue;
+    }
+    if (depois !== undefined && depois !== 0 && Math.sign(depois) === -Math.sign(y)) achados.push(bissecao(h, t, xs[i + 1]!));
+    const minimoLocal =
+      antes !== undefined &&
+      depois !== undefined &&
+      Math.sign(antes) === Math.sign(y) &&
+      Math.sign(depois) === Math.sign(y) &&
+      Math.abs(y) <= Math.abs(antes) &&
+      Math.abs(y) <= Math.abs(depois);
+    if (minimoLocal && Math.abs(y) < 1e-2 * escala) {
+      const m = minimoDoModulo(h, xs[i - 1]!, xs[i + 1]!);
+      if (Math.abs(h(m)) < 1e-12) achados.push(m);
+    }
+  }
+  return unicos(achados);
+}
+
+function bissecao(h: (t: number) => number, a: number, b: number): number {
+  let [ini, fim, yIni] = [a, b, h(a)];
+  for (let k = 0; k < 200; k++) {
+    const meio = (ini + fim) / 2;
+    if (meio <= ini || meio >= fim) break;
+    const y = h(meio);
+    if (y === 0) return meio;
+    if (Math.sign(y) === Math.sign(yIni)) [ini, yIni] = [meio, y];
+    else fim = meio;
+  }
+  return (ini + fim) / 2;
+}
+
+/** Mínimo de |h| em [a, b], pela razão áurea. */
+function minimoDoModulo(h: (t: number) => number, a: number, b: number): number {
+  const r = (Math.sqrt(5) - 1) / 2;
+  let [ini, fim] = [a, b];
+  for (let k = 0; k < 200 && fim - ini > 1e-15 * Math.max(1, Math.abs(ini)); k++) {
+    const [c, d] = [fim - r * (fim - ini), ini + r * (fim - ini)];
+    if (Math.abs(h(c)) <= Math.abs(h(d))) fim = d;
+    else ini = c;
+  }
+  return (ini + fim) / 2;
+}
+
+/** Ordena e junta os pontos que são o mesmo. */
+function unicos(pontos: number[]): number[] {
+  return [...pontos].sort((p, q) => p - q).filter((p, i, todos) => i === 0 || p - todos[i - 1]! > FOLGA);
+}
+
+// ─── Texto ─────────────────────────────────────────────────────────────────────
+
+/** Número para mostrar: inteiros, múltiplos simples de π e o número e por extenso; o resto com 4 casas. */
+function numeroBonito(valor: number): string {
+  const inteiro = Math.round(valor);
+  if (Math.abs(valor - inteiro) < 1e-9) return String(inteiro === 0 ? 0 : inteiro);
+  for (const q of [1, 2, 3, 4, 6]) {
+    const p = Math.round((valor * q) / Math.PI);
+    if (p !== 0 && Math.abs((valor * q) / Math.PI - p) < 1e-9) {
+      const multiplo = p === 1 ? 'pi' : p === -1 ? '-pi' : `${p}*pi`;
+      return q === 1 ? multiplo : `${multiplo}/${q}`;
+    }
+  }
+  if (Math.abs(valor - Math.E) < 1e-12) return 'e';
+  return String(Number(valor.toFixed(4)));
+}
+
+const textoDoLimite = (e: Expr): string => (e.tipo === 'num' ? numeroBonito(e.valor) : paraTexto(e));

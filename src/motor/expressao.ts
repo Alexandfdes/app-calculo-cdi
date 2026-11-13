@@ -22,7 +22,9 @@ export type Expr =
   | { tipo: 'func'; nome: NomeFuncao; arg: Expr }
   | { tipo: 'log'; arg: Expr; base: Expr }
   /** Marcador "(u)'" que só aparece no passo a passo das derivadas. */
-  | { tipo: 'derivada'; de: Expr };
+  | { tipo: 'derivada'; de: Expr }
+  /** Marcador "∫ u dx" que só aparece no passo a passo das integrais. */
+  | { tipo: 'integral'; de: Expr; variavel: string };
 
 /** Erro de entrada com mensagem pronta para mostrar ao usuário. */
 export class ErroDeEntrada extends Error {
@@ -47,6 +49,7 @@ export const neg = (a: Expr): Expr => ({ tipo: 'neg', a });
 export const func = (nome: NomeFuncao, arg: Expr): Expr => ({ tipo: 'func', nome, arg });
 export const logBase = (arg: Expr, base: Expr): Expr => ({ tipo: 'log', arg, base });
 export const derivada = (de: Expr): Expr => ({ tipo: 'derivada', de });
+export const integral = (de: Expr, nomeVariavel: string): Expr => ({ tipo: 'integral', de, variavel: nomeVariavel });
 
 /** A expressão depende da variável? */
 export function contem(e: Expr, nome: string): boolean {
@@ -71,10 +74,40 @@ export function contem(e: Expr, nome: string): boolean {
       return contem(e.arg, nome) || contem(e.base, nome);
     case 'derivada':
       return contem(e.de, nome);
+    case 'integral':
+      return e.variavel === nome || contem(e.de, nome);
   }
 }
 
 export const iguais = (a: Expr, b: Expr): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+/** Troca cada ocorrência de `alvo` (comparada pela estrutura) por `por`. */
+export function trocar(e: Expr, alvo: Expr, por: Expr): Expr {
+  if (iguais(e, alvo)) return por;
+  switch (e.tipo) {
+    case 'num':
+    case 'var':
+    case 'const':
+      return e;
+    case 'soma':
+    case 'sub':
+    case 'mul':
+    case 'div':
+      return { ...e, a: trocar(e.a, alvo, por), b: trocar(e.b, alvo, por) };
+    case 'pot':
+      return { ...e, base: trocar(e.base, alvo, por), exp: trocar(e.exp, alvo, por) };
+    case 'neg':
+      return { ...e, a: trocar(e.a, alvo, por) };
+    case 'func':
+      return { ...e, arg: trocar(e.arg, alvo, por) };
+    case 'log':
+      return { ...e, arg: trocar(e.arg, alvo, por), base: trocar(e.base, alvo, por) };
+    case 'derivada':
+      return { ...e, de: trocar(e.de, alvo, por) };
+    case 'integral':
+      return { ...e, de: trocar(e.de, alvo, por) };
+  }
+}
 
 // ─── Leitura ───────────────────────────────────────────────────────────────────
 
@@ -172,6 +205,8 @@ function precedencia(e: Expr): number {
       return 4;
     case 'num':
       return e.valor < 0 ? 3 : 5;
+    case 'integral':
+      return 2; // "∫ f dx" se comporta como um produto: 3*(∫ x dx), ∫ x dx - ∫ 1 dx
     default:
       return 5;
   }
@@ -206,9 +241,74 @@ export function paraTexto(e: Expr): string {
       return `log(${paraTexto(e.arg)}, ${paraTexto(e.base)})`;
     case 'derivada':
       return `(${paraTexto(e.de)})'`;
+    case 'integral':
+      return `∫ ${entre(e.de, 2)} d${e.variavel}`;
   }
 }
 
 /** Expoentes que dispensam parênteses: número não negativo, variável ou constante. */
 const atomico = (e: Expr): boolean =>
   (e.tipo === 'num' && e.valor >= 0) || e.tipo === 'var' || e.tipo === 'const';
+
+// ─── Valor numérico ────────────────────────────────────────────────────────────
+
+/** Só números reais finitos; o resto (divisão por zero, ln de negativo…) vira NaN. */
+const real = (v: number): number => (Number.isFinite(v) ? v : Number.NaN);
+
+function funcaoNumerica(nome: NomeFuncao, t: number): number {
+  switch (nome) {
+    case 'sen':
+      return Math.sin(t);
+    case 'cos':
+      return Math.cos(t);
+    case 'tg':
+      return Math.tan(t);
+    case 'cotg':
+      return 1 / Math.tan(t);
+    case 'sec':
+      return 1 / Math.cos(t);
+    case 'csc':
+      return 1 / Math.sin(t);
+    case 'ln':
+      return Math.log(t);
+    case 'raiz':
+      return Math.sqrt(t);
+    case 'abs':
+      return Math.abs(t);
+  }
+}
+
+/**
+ * Valor da expressão com as variáveis em `valores`; NaN onde ela não tem valor real.
+ * Atenção: tg(π/2) em ponto flutuante dá ~1,6·10¹⁶, não NaN. Para saber onde uma expressão
+ * não existe, olhe a estrutura dela (zeros de cos, de denominadores…), não o tamanho do valor.
+ */
+export function avaliar(e: Expr, valores: Record<string, number> = {}): number {
+  switch (e.tipo) {
+    case 'num':
+      return e.valor;
+    case 'var':
+      return valores[e.nome] ?? Number.NaN;
+    case 'const':
+      return e.nome === 'e' ? Math.E : Math.PI;
+    case 'soma':
+      return real(avaliar(e.a, valores) + avaliar(e.b, valores));
+    case 'sub':
+      return real(avaliar(e.a, valores) - avaliar(e.b, valores));
+    case 'mul':
+      return real(avaliar(e.a, valores) * avaliar(e.b, valores));
+    case 'div':
+      return real(avaliar(e.a, valores) / avaliar(e.b, valores));
+    case 'pot':
+      return real(avaliar(e.base, valores) ** avaliar(e.exp, valores));
+    case 'neg':
+      return -avaliar(e.a, valores);
+    case 'func':
+      return real(funcaoNumerica(e.nome, avaliar(e.arg, valores)));
+    case 'log':
+      return real(Math.log(avaliar(e.arg, valores)) / Math.log(avaliar(e.base, valores)));
+    case 'derivada':
+    case 'integral':
+      throw new Error('Marcador do passo a passo não tem valor numérico.');
+  }
+}

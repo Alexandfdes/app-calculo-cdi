@@ -3,7 +3,8 @@
  * entre os erros comuns, então nenhum resultado sai do motor sem passar por aqui.
  *
  * Faz o que é seguro e previsível: contas com números, elementos neutros (0 e 1), sinais,
- * coeficientes na frente, potências da mesma base juntas, sen/cos = tg e cos/sen = cotg.
+ * coeficientes na frente, potências da mesma base juntas, sen/cos = tg, cos/sen = cotg e
+ * u^(1/2) = √u.
  */
 import { E, div, func, iguais, mul, neg, num, pot, soma, sub } from './expressao';
 import type { Expr, NomeFuncao } from './expressao';
@@ -25,6 +26,7 @@ function umaVolta(e: Expr): Expr {
     case 'var':
     case 'const':
     case 'derivada':
+    case 'integral':
       return e;
     case 'neg':
       return negar(umaVolta(e.a));
@@ -95,6 +97,7 @@ function potencia(base: Expr, exp: Expr): Expr {
   if (ehNum(base) && ehNum(exp) && Number.isInteger(exp.valor) && exp.valor > 0) return num(base.valor ** exp.valor);
   if (base.tipo === 'pot' && ehNum(base.exp) && ehNum(exp)) return potencia(base.base, num(base.exp.valor * exp.valor));
   if (ehNum(exp) && exp.valor < 0) return monomio(div(num(1), potencia(base, num(-exp.valor)))); // x⁻ⁿ = 1/xⁿ
+  if (vale(exp, 0.5) || (exp.tipo === 'div' && vale(exp.a, 1) && vale(exp.b, 2))) return func('raiz', base); // u^(1/2) = √u
   return pot(base, exp);
 }
 
