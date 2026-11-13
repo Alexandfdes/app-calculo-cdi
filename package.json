@@ -1,0 +1,16 @@
+{
+  "name": "cdi-casos-de-teste",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "mathjs": "^15.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.0"
+  },
+  "private": true,
+  "type": "module"
+}
