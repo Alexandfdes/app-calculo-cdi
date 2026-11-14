@@ -17,6 +17,7 @@ import { ErroDeEntrada, avaliar, contem, func, lerExpressao, num, paraTexto } fr
 import type { Expr } from './expressao';
 import { integrar } from './integrais';
 import type { ResultadoIntegral } from './integrais';
+import { numeroBonito } from './numeros';
 
 export interface ResultadoIntegralDefinida {
   entrada: Expr;
@@ -244,20 +245,5 @@ function unicos(pontos: number[]): number[] {
 }
 
 // ─── Texto ─────────────────────────────────────────────────────────────────────
-
-/** Número para mostrar: inteiros, múltiplos simples de π e o número e por extenso; o resto com 4 casas. */
-function numeroBonito(valor: number): string {
-  const inteiro = Math.round(valor);
-  if (Math.abs(valor - inteiro) < 1e-9) return String(inteiro === 0 ? 0 : inteiro);
-  for (const q of [1, 2, 3, 4, 6]) {
-    const p = Math.round((valor * q) / Math.PI);
-    if (p !== 0 && Math.abs((valor * q) / Math.PI - p) < 1e-9) {
-      const multiplo = p === 1 ? 'pi' : p === -1 ? '-pi' : `${p}*pi`;
-      return q === 1 ? multiplo : `${multiplo}/${q}`;
-    }
-  }
-  if (Math.abs(valor - Math.E) < 1e-12) return 'e';
-  return String(Number(valor.toFixed(4)));
-}
 
 const textoDoLimite = (e: Expr): string => (e.tipo === 'num' ? numeroBonito(e.valor) : paraTexto(e));
