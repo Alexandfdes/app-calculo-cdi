@@ -23,23 +23,25 @@ export function numeroBonito(valor: number): string {
       return q === 1 ? multiplo : `${multiplo}/${q}`;
     }
   }
-  // m·√r/q: o quadrado do número é m²·r/q²
+  // m·√r/q: o quadrado do número é m²·r/q². Só raízes de caderno: m²·r até um milhão, radicando
+  // r até 1000 e a conta batendo até a 10ª casa. Com folga relativa e sem limite, qualquer número
+  // grande virava raiz: e^10 − 1 saía √485121143, que nem é igual a ele.
   const quadrado = valor * valor;
   for (const q of [1, 2, 3, 4, 6, 9]) {
     const p = quadrado * q * q;
     const inteiroP = Math.round(p);
-    if (inteiroP > 1 && Math.abs(p - inteiroP) < 1e-8 * Math.max(1, p) && !quadradoPerfeito(inteiroP)) {
-      let [m, r] = [1, inteiroP];
-      for (let fator = 2; fator * fator <= r; fator++) {
-        while (r % (fator * fator) === 0) {
-          r /= fator * fator;
-          m *= fator;
-        }
+    if (inteiroP <= 1 || inteiroP > 1e6 || Math.abs(p - inteiroP) > 1e-10 * p || quadradoPerfeito(inteiroP)) continue;
+    let [m, r] = [1, inteiroP];
+    for (let fator = 2; fator * fator <= r; fator++) {
+      while (r % (fator * fator) === 0) {
+        r /= fator * fator;
+        m *= fator;
       }
-      const g = mdc(m, q);
-      const [mm, qq] = [m / g, q / g];
-      return `${valor < 0 ? '-' : ''}${mm === 1 ? '' : `${mm}*`}sqrt(${r})${qq === 1 ? '' : `/${qq}`}`;
     }
+    if (r > 1000) continue;
+    const g = mdc(m, q);
+    const [mm, qq] = [m / g, q / g];
+    return `${valor < 0 ? '-' : ''}${mm === 1 ? '' : `${mm}*`}sqrt(${r})${qq === 1 ? '' : `/${qq}`}`;
   }
   if (Math.abs(valor - Math.E) < 1e-12) return 'e';
   return String(Number(valor.toFixed(4)));

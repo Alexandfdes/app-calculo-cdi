@@ -153,10 +153,13 @@ const TIPOS_DA_AULA =
 
 // ─── Números ───────────────────────────────────────────────────────────────────
 
-/** O número tem escrita exata (inteiro, fração, múltiplo de π, raiz, e)? */
+/**
+ * O número tem escrita exata (inteiro, fração, múltiplo de π, raiz, e)? A folga é a do ponto
+ * flutuante: com 1e-9, 2^13,5 = 11585,2375029… arredondado para 11585.2375 passava por exato.
+ */
 function exato(v: number): boolean {
   if (!Number.isFinite(v)) return false;
-  return Math.abs(avaliar(lerExpressao(numeroBonito(v))) - v) <= 1e-9 * Math.max(1, Math.abs(v));
+  return Math.abs(avaliar(lerExpressao(numeroBonito(v))) - v) <= 1e-12 * Math.max(1, Math.abs(v));
 }
 
 /** "= 2" quando o número sai exato; "≈ 1.585" quando não. */

@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { ErroDeEntrada, avaliar, lerExpressao, paraLeitura, paraTexto } from '../src/motor/expressao';
-import { analisarFuncao, calcularEm, pertence, tabelaDeValores, valoresNotaveis } from '../src/motor/funcoes';
+import { analisarFuncao, calcularEm, igualdadeDaAnalise, pertence, tabelaDeValores, valoresNotaveis } from '../src/motor/funcoes';
 import type { AnaliseFuncao, TipoFuncao } from '../src/motor/funcoes';
 import { numeroBonito, numeroParaLer } from '../src/motor/numeros';
 import { angulos, quadraticas, validade } from './casos-dos-slides';
@@ -286,6 +286,37 @@ describe('Números e textos para ler', () => {
     for (const v of [Math.sqrt(3) / 2, -2 * Math.sqrt(5) / 3, (5 * Math.PI) / 12, 7 / 9, Math.E]) {
       expect(avaliar(lerExpressao(numeroBonito(v)))).toBeCloseTo(v, 12);
     }
+  });
+
+  it('número grande sem forma exata fica em decimal, e não vira raiz falsa', () => {
+    // Antes, e^10 − 1 saía √485121143 e 100,3² − 4·100,3 − 5 saía 6√2588822: raízes que nem eram iguais ao número.
+    expect(numeroBonito(Math.exp(10) - 1)).toBe('22025.4658');
+    expect(numeroBonito(100.3 ** 2 - 4 * 100.3 - 5)).toBe('9653.89');
+    expect(numeroBonito(1000 * 1.07 ** -2)).toBe('873.4387');
+    expect(numeroBonito(10.1 ** 3)).toBe('1030.301');
+    expect(numeroBonito(7.3 ** 4 / 4)).toBe('709.956');
+    expect(numeroBonito(243.53)).toBe('243.53');
+  });
+
+  it('raiz de verdade continua saindo como raiz', () => {
+    expect(numeroBonito(2 * Math.sqrt(2))).toBe('2*sqrt(2)');
+    expect(numeroBonito(Math.sqrt(6))).toBe('sqrt(6)');
+    expect(numeroBonito((3 * Math.sqrt(2)) / 2)).toBe('3*sqrt(2)/2');
+    expect(numeroBonito(100 * Math.sqrt(2))).toBe('100*sqrt(2)');
+  });
+
+  it('na tela: a tabela de 1000·1,07ˣ e o valor de f(100,3) saem em decimal', () => {
+    const juros = analisarFuncao('1000*1.07^x');
+    expect(tabelaDeValores(juros).slice(0, 2).map((l) => numeroParaLer(l.y!))).toEqual(['873.4387', '934.5794']);
+    expect(numeroParaLer(calcularEm(analisarFuncao('x^2 - 4*x - 5'), '100.3').y!)).toBe('9653.89');
+  });
+
+  it('número arredondado na tela leva ≈, e não =: 2^13,5 ≈ 11585.2375', () => {
+    const f = analisarFuncao('2^x');
+    expect(igualdadeDaAnalise(f, calcularEm(f, '13.5').y!)).toBe('≈ 11585.2375');
+    expect(igualdadeDaAnalise(f, calcularEm(f, '0.5').y!)).toBe('= √2');
+    const g = analisarFuncao('x^2 - 4*x - 5');
+    expect(igualdadeDaAnalise(g, calcularEm(g, '100.3').y!)).toBe('= 9653.89');
   });
 
   const leituras: [string, string][] = [
