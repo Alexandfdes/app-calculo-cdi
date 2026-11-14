@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Limites, derivadas e integrais com o passo a passo da aula, um gráfico animado e a conta conferida." />
+    <meta name="theme-color" content="#070b18" />
+    <title>Cálculo CDI · limites, derivadas e integrais</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%236d4aff'/%3E%3Cstop offset='1' stop-color='%232563eb'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Ctext x='32' y='47' font-size='42' text-anchor='middle' fill='white' font-family='Cambria Math, serif'%3E%E2%88%AB%3C/text%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="/src/tela/estilo.css" />
+  </head>
+  <body>
+    <div class="fundo" id="fundo" aria-hidden="true"></div>
+
+    <header class="topo">
+      <svg class="logo" viewBox="0 0 120 64" aria-hidden="true">
+        <defs>
+          <linearGradient id="logo-gradiente" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" stop-color="#a78bfa" />
+            <stop offset="0.5" stop-color="#22d3ee" />
+            <stop offset="1" stop-color="#f472b6" />
+          </linearGradient>
+        </defs>
+        <path class="logo-eixo" d="M6 32 H114" />
+        <path class="logo-curva" d="M6 32 C 20 4, 34 4, 48 32 S 76 60, 90 32 S 110 10, 114 18" />
+        <circle class="logo-ponto" r="4.5">
+          <animateMotion
+            dur="5s"
+            begin="1.4s"
+            repeatCount="indefinite"
+            keyPoints="0;1;0"
+            keyTimes="0;0.5;1"
+            calcMode="spline"
+            keySplines="0.45 0 0.55 1; 0.45 0 0.55 1"
+            path="M6 32 C 20 4, 34 4, 48 32 S 76 60, 90 32 S 110 10, 114 18"
+          />
+        </circle>
+      </svg>
+      <div>
+        <h1 class="titulo">Cálculo <span>CDI</span></h1>
+        <p class="subtitulo">Limites, derivadas e integrais com o passo a passo da aula, um gráfico vivo e a conta conferida.</p>
+      </div>
+    </header>
+
+    <main class="app">
+      <section class="painel entrada" aria-label="Entrada">
+        <fieldset class="modos" id="modos" data-modo="derivada">
+          <legend class="so-leitor">O que calcular</legend>
+          <span class="indicador" aria-hidden="true"></span>
+          <input type="radio" name="modo" id="modo-limite" value="limite" />
+          <label for="modo-limite">Limite</label>
+          <input type="radio" name="modo" id="modo-derivada" value="derivada" checked />
+          <label for="modo-derivada">Derivada</label>
+          <input type="radio" name="modo" id="modo-integral" value="integral" />
+          <label for="modo-integral">Integral</label>
+          <input type="radio" name="modo" id="modo-definida" value="definida" />
+          <label for="modo-definida">Integral definida</label>
+        </fieldset>
+
+        <form class="formulario" id="formulario" autocomplete="off">
+          <label class="campo-funcao" for="funcao">
+            <span class="fx">f(<i>x</i>) =</span>
+            <input id="funcao" name="funcao" type="text" spellcheck="false" autocapitalize="off" placeholder="por exemplo, x^2*sen(x)" />
+          </label>
+          <button class="calcular" type="submit">Calcular</button>
+          <div class="ponto" id="ponto-limite" hidden>
+            <label
+              ><span class="fx"><i>x</i> →</span>
+              <input id="ponto" value="0" spellcheck="false" autocapitalize="off" aria-describedby="dica-ponto" aria-label="Ponto para onde x vai"
+            /></label>
+            <span class="dica-ponto" id="dica-ponto">um número, <code>pi</code>, <code>e</code>, ou <code>inf</code> e <code>-inf</code> para o infinito</span>
+          </div>
+          <div class="limites" id="limites" hidden>
+            <label>de <input id="limite-a" value="0" spellcheck="false" autocapitalize="off" aria-label="Limite inferior a" /></label>
+            <label>até <input id="limite-b" value="pi" spellcheck="false" autocapitalize="off" aria-label="Limite superior b" /></label>
+          </div>
+        </form>
+
+        <p class="previa formula" id="previa" aria-hidden="true"></p>
+
+        <p class="exemplos-titulo">Experimente</p>
+        <div class="chips" id="exemplos"></div>
+
+        <details class="ajuda">
+          <summary>Como digitar</summary>
+          <ul>
+            <li>Potência com <code>^</code>: <code>x^3</code>, <code>x^(1/2)</code></li>
+            <li>Multiplicação com <code>*</code>: <code>2*x</code> (ou <code>2x</code>)</li>
+            <li>Funções: <code>sen</code>, <code>cos</code>, <code>tg</code>, <code>cotg</code>, <code>sec</code>, <code>csc</code>, <code>ln</code>, <code>sqrt</code> (raiz) e <code>abs</code> (módulo)</li>
+            <li>Logaritmo em outra base: <code>log(x, 10)</code></li>
+            <li>Constantes: <code>e</code> e <code>pi</code>; decimais com ponto: <code>2.5</code></li>
+            <li>No limite, função por partes: <code>x &lt; 5 ? 2*x : 10 - 3*(x - 5)</code> (a primeira fórmula vale quando a condição é verdadeira)</li>
+          </ul>
+        </details>
+      </section>
+
+      <section class="painel resultado" id="resultado" aria-live="polite">
+        <p class="resultado-titulo">Resultado</p>
+        <p class="vazio">Escolha um exemplo ou digite uma função.</p>
+      </section>
+
+      <section class="painel grafico" aria-labelledby="titulo-grafico">
+        <div class="grafico-topo">
+          <h2 id="titulo-grafico">Gráfico</h2>
+          <div class="legenda" id="legenda"></div>
+        </div>
+        <div class="tela-grafico">
+          <canvas id="canvas" role="img" aria-label="Gráfico da função"></canvas>
+          <div class="placar" id="riemann" hidden></div>
+        </div>
+        <p class="leitura" id="leitura"></p>
+        <p class="dica">Passe o mouse ou o dedo sobre o gráfico para mover o ponto.</p>
+      </section>
+
+      <section class="painel passos" aria-labelledby="titulo-passos">
+        <div class="passos-topo">
+          <h2 id="titulo-passos">Passo a passo</h2>
+          <button class="rever" id="rever" type="button">↻ Rever animação</button>
+        </div>
+        <ol class="lista-passos" id="passos">
+          <li class="vazio">O passo a passo aparece aqui.</li>
+        </ol>
+      </section>
+    </main>
+
+    <footer class="rodape">Feito para a disciplina de Cálculo Diferencial e Integral · Aula 2 (limites), Aula 3 (derivadas) e Aula 4 (integrais)</footer>
+    <script type="module" src="/src/tela/main.ts"></script>
+  </body>
+</html>

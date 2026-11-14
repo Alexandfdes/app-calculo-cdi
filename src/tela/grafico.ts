@@ -1,0 +1,805 @@
+/**
+ * Gráfico animado da tela, em canvas e sem biblioteca. A curva se desenha sozinha; na
+ * derivada, a reta tangente percorre a curva e o ponto de f′ mostra que a altura de f′ é a
+ * inclinação; na integral, a área se acumula até o ponto ("integrar é acumular"); na integral
+ * definida, os retângulos de Riemann se multiplicam até virar a área exata.
+ * Com "reduzir movimento" ligado no sistema, tudo aparece pronto, sem animação.
+ */
+
+export type Funcao = (x: number) => number;
+
+/** Um limite lateral como o gráfico precisa: número, infinito, oscilação ou sem valor. */
+export type ValorNoGrafico = number | '+∞' | '-∞' | 'oscila' | 'sem valor';
+
+export type Cena =
+  | {
+      tipo: 'limite';
+      f: Funcao;
+      /** O ponto; ±Infinity para limite no infinito. */
+      a: number;
+      /** Limites laterais; no infinito, os dois são o próprio limite. */
+      esquerda: ValorNoGrafico;
+      direita: ValorNoGrafico;
+      valorEmA: number | null;
+      /** Onde a função por partes troca de fórmula: a curva é cortada aí. */
+      corte: number | null;
+      /** Como mostrar o ponto, por exemplo "π/2". */
+      rotuloPonto: string;
+      trigonometrica: boolean;
+    }
+  | { tipo: 'funcao'; f: Funcao; trigonometrica: boolean }
+  | { tipo: 'derivada'; f: Funcao; derivada: Funcao; trigonometrica: boolean }
+  | { tipo: 'integral'; f: Funcao; primitiva: Funcao; trigonometrica: boolean }
+  | {
+      tipo: 'definida';
+      f: Funcao;
+      a: number;
+      b: number;
+      /** Como mostrar a e b nos rótulos, por exemplo "π". */
+      rotulos: [string, string];
+      diverge: boolean;
+      singularidades: number[];
+      trigonometrica: boolean;
+    };
+
+export interface Ouvintes {
+  /** O que o ponto móvel está mostrando, em texto. */
+  aoLer?: (texto: string) => void;
+  /** Integral definida: a soma de Riemann com n retângulos. */
+  aoSomar?: (n: number, soma: number) => void;
+  /** Integral definida: a animação chegou à área exata (ou à divergência). */
+  aoTerminar?: () => void;
+}
+
+interface Vista {
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+}
+
+const DURACAO = { grade: 350, pausa: 150, curva: 1000, retangulos: 650, area: 800 };
+const RETANGULOS = [1, 2, 4, 8, 16, 32, 64, 128];
+const FONTE = '"Segoe UI", system-ui, -apple-system, sans-serif';
+
+/** Número curto para rótulos: 1.234, −0.5, 1.20e+5, ∞. */
+export function curto(v: number): string {
+  if (Number.isNaN(v)) return '—';
+  if (!Number.isFinite(v)) return v > 0 ? '∞' : '−∞';
+  const modulo = Math.abs(v);
+  const texto = modulo !== 0 && (modulo >= 1e5 || modulo < 1e-3) ? v.toExponential(2) : String(Number(v.toFixed(modulo >= 100 ? 1 : 3)));
+  return texto.replace('-', '−');
+}
+
+const limitar = (v: number, min: number, max: number): number => Math.min(max, Math.max(min, v));
+const suavizar = (p: number): number => 1 - (1 - p) ** 3;
+const progresso = (t: number, inicio: number, duracao: number): number => suavizar(limitar((t - inicio) / duracao, 0, 1));
+
+export class Grafico {
+  private readonly ctx: CanvasRenderingContext2D;
+  private readonly calmo = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  private readonly cores: Record<'f' | 'segunda' | 'tangente' | 'positiva' | 'negativa' | 'erro', string>;
+  private cena: Cena | null = null;
+  private vista: Vista = { x0: -5, x1: 5, y0: -5, y1: 5 };
+  private inicio = 0;
+  private quadro = 0;
+  private largura = 0;
+  private altura = 0;
+  private ponteiro: number | null = null;
+  private ultimoMovimento = Number.NEGATIVE_INFINITY;
+  private xAtual: number | null = null;
+  private partida = 0;
+  private trecho: [number, number] = [-5, 5];
+  private acumulada: Funcao = () => Number.NaN;
+  private ultimoN = 0;
+  private terminou = false;
+  private ultimaLeitura = '';
+
+  constructor(
+    private readonly canvas: HTMLCanvasElement,
+    private readonly ouvintes: Ouvintes = {},
+  ) {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Este navegador não desenha em canvas 2D.');
+    this.ctx = ctx;
+    const css = getComputedStyle(document.documentElement);
+    const cor = (nome: string, reserva: string): string => css.getPropertyValue(nome).trim() || reserva;
+    this.cores = {
+      f: cor('--cor-f', '#38bdf8'),
+      segunda: cor('--cor-segunda', '#f472b6'),
+      tangente: cor('--cor-tangente', '#a3e635'),
+      positiva: cor('--area-positiva', 'rgba(56, 189, 248, 0.28)'),
+      negativa: cor('--area-negativa', 'rgba(251, 113, 133, 0.30)'),
+      erro: cor('--erro', '#fb7185'),
+    };
+    new ResizeObserver(() => this.redimensionar()).observe(canvas);
+    const mover = (ev: PointerEvent): void => {
+      const r = canvas.getBoundingClientRect();
+      this.ponteiro = this.vista.x0 + ((ev.clientX - r.left) / r.width) * (this.vista.x1 - this.vista.x0);
+      this.ultimoMovimento = performance.now();
+      if (this.calmo) this.pedirQuadro();
+    };
+    canvas.addEventListener('pointermove', mover);
+    canvas.addEventListener('pointerdown', mover);
+    canvas.addEventListener('pointerleave', () => {
+      this.ponteiro = null;
+    });
+    this.redimensionar();
+  }
+
+  mostrar(cena: Cena): void {
+    this.cena = cena;
+    this.inicio = performance.now();
+    this.ponteiro = null;
+    this.xAtual = null;
+    this.ultimoN = 0;
+    this.terminou = false;
+    this.ultimaLeitura = '';
+    const [x0, x1]: [number, number] =
+      cena.tipo === 'definida'
+        ? comMargem(cena.a, cena.b)
+        : cena.tipo === 'limite'
+          ? janelaDoLimite(cena)
+          : cena.trigonometrica
+            ? [-2 * Math.PI, 2 * Math.PI]
+            : [-4, 4];
+    const curvas: Funcao[] = [cena.f];
+    if (cena.tipo === 'limite') {
+      const faixa = faixaVertical(curvas, x0, x1);
+      const extras = [cena.esquerda, cena.direita, cena.valorEmA].filter((v): v is number => typeof v === 'number');
+      const altura = faixa.y1 - faixa.y0;
+      this.vista = {
+        x0,
+        x1,
+        y0: Math.min(faixa.y0, ...extras.map((v) => v - altura * 0.12)),
+        y1: Math.max(faixa.y1, ...extras.map((v) => v + altura * 0.2)),
+      };
+      this.pedirQuadro();
+      return;
+    }
+    if (cena.tipo === 'derivada') curvas.push(cena.derivada);
+    if (cena.tipo === 'integral') {
+      const { partida, trecho } = acharPartida(cena.f, x0, x1);
+      const base = cena.primitiva(partida);
+      this.partida = partida;
+      this.trecho = trecho;
+      this.acumulada = (x) => (x < trecho[0] || x > trecho[1] ? Number.NaN : cena.primitiva(x) - base);
+      curvas.push(this.acumulada);
+    }
+    this.vista = { x0, x1, ...faixaVertical(curvas, x0, x1) };
+    this.pedirQuadro();
+  }
+
+  // ─── Quadro a quadro ─────────────────────────────────────────────────────────
+
+  private pedirQuadro(): void {
+    cancelAnimationFrame(this.quadro);
+    this.quadro = requestAnimationFrame((agora) => this.desenhar(agora));
+  }
+
+  private redimensionar(): void {
+    const r = this.canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    this.largura = r.width;
+    this.altura = r.height;
+    this.canvas.width = Math.round(r.width * dpr);
+    this.canvas.height = Math.round(r.height * dpr);
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.pedirQuadro();
+  }
+
+  private desenhar(agora: number): void {
+    const { ctx, cena } = this;
+    ctx.clearRect(0, 0, this.largura, this.altura);
+    if (!cena || this.largura === 0 || this.altura === 0) return;
+    const t = this.calmo ? Number.POSITIVE_INFINITY : agora - this.inicio;
+    const fimCurva = DURACAO.pausa + DURACAO.curva;
+    const pCurva = progresso(t, DURACAO.pausa, DURACAO.curva);
+    const pSegunda = progresso(t, fimCurva, DURACAO.curva);
+    const pInteracao = progresso(t, fimCurva + DURACAO.curva, 450);
+    this.grade(progresso(t, 0, DURACAO.grade), cena.trigonometrica);
+    let continuar = t < fimCurva;
+
+    switch (cena.tipo) {
+      case 'funcao':
+        this.curva(cena.f, this.cores.f, pCurva);
+        break;
+      case 'derivada': {
+        this.curva(cena.f, this.cores.f, pCurva);
+        this.curva(cena.derivada, this.cores.segunda, pSegunda);
+        if (pInteracao > 0) this.tangente(cena, this.posicao(t, [this.vista.x0, this.vista.x1]), pInteracao);
+        continuar = true;
+        break;
+      }
+      case 'integral': {
+        const x = this.posicao(t, this.trecho);
+        if (pInteracao > 0) this.area(cena.f, Math.min(this.partida, x), Math.max(this.partida, x), pInteracao);
+        this.curva(cena.f, this.cores.f, pCurva);
+        this.curva(this.acumulada, this.cores.segunda, pSegunda);
+        if (pInteracao > 0) this.acumulo(cena, x, pInteracao);
+        continuar = true;
+        break;
+      }
+      case 'definida':
+        continuar = this.definida(cena, t);
+        break;
+      case 'limite':
+        this.curva(cena.f, this.cores.f, pCurva, 2.6, [cena.a, cena.corte ?? Number.NaN].filter(Number.isFinite));
+        if (pCurva >= 1) {
+          if (Number.isFinite(cena.a)) this.aproximarDoPonto(cena, t, progresso(t, fimCurva, 400));
+          else this.aproximarDoInfinito(cena, t, progresso(t, fimCurva, 400));
+        }
+        continuar = true;
+        break;
+    }
+    if (continuar && !this.calmo) this.quadro = requestAnimationFrame((proximo) => this.desenhar(proximo));
+  }
+
+  /** Onde está o ponto móvel: segue o ponteiro; parado, passeia sozinho pela curva. */
+  private posicao(t: number, [lo, hi]: [number, number]): number {
+    const meio = (lo + hi) / 2;
+    const amplitude = (hi - lo) * 0.42;
+    const ponteiro = this.ponteiro;
+    let alvo: number;
+    if (ponteiro !== null && performance.now() - this.ultimoMovimento < 2500) alvo = limitar(ponteiro, lo, hi);
+    else if (this.calmo) alvo = meio + amplitude * 0.45;
+    else alvo = meio + amplitude * Math.sin(t / 1900);
+    this.xAtual = this.xAtual === null || this.calmo ? alvo : this.xAtual + (alvo - this.xAtual) * 0.14;
+    return this.xAtual;
+  }
+
+  // ─── Cenas ───────────────────────────────────────────────────────────────────
+
+  private tangente(cena: Extract<Cena, { tipo: 'derivada' }>, x: number, alfa: number): void {
+    const y = cena.f(x);
+    const m = cena.derivada(x);
+    if (!Number.isFinite(y) || !Number.isFinite(m)) {
+      this.ler(`Em x = ${curto(x)}, f ou f′ não existe.`);
+      return;
+    }
+    const { ctx } = this;
+    const { x0, x1 } = this.vista;
+    ctx.save();
+    ctx.globalAlpha = alfa;
+    this.segmento(x0, y + m * (x0 - x), x1, y + m * (x1 - x), this.cores.tangente, 2.4);
+    this.tracejado(x, y, x, m, this.cores.segunda);
+    this.ponto(x, m, this.cores.segunda);
+    this.ponto(x, y, this.cores.tangente);
+    this.etiqueta(`inclinação ${curto(m)}`, x, y, this.cores.tangente);
+    ctx.restore();
+    this.ler(`x = ${curto(x)}   ·   f(x) = ${curto(y)}   ·   inclinação da tangente = f′(x) = ${curto(m)}`);
+  }
+
+  private acumulo(cena: Extract<Cena, { tipo: 'integral' }>, x: number, alfa: number): void {
+    const y = cena.f(x);
+    const acumulado = this.acumulada(x);
+    if (!Number.isFinite(y) || !Number.isFinite(acumulado)) return;
+    const { ctx } = this;
+    ctx.save();
+    ctx.globalAlpha = alfa;
+    this.tracejado(x, 0, x, acumulado, this.cores.segunda);
+    this.ponto(x, y, this.cores.f);
+    this.ponto(x, acumulado, this.cores.segunda);
+    this.etiqueta(`área ${curto(acumulado)}`, x, acumulado, this.cores.segunda);
+    ctx.restore();
+    const [p, q] = [curto(this.partida), curto(x)];
+    this.ler(`Área de ${p} até ${q}  =  F(${q}) − F(${p})  =  ${curto(acumulado)}`);
+  }
+
+  /** Integral definida; devolve se ainda há animação pela frente. */
+  private definida(cena: Extract<Cena, { tipo: 'definida' }>, t: number): boolean {
+    const lo = Math.min(cena.a, cena.b);
+    const hi = Math.max(cena.a, cena.b);
+    const pCurva = progresso(t, DURACAO.pausa, DURACAO.curva);
+    const inicioRetangulos = DURACAO.pausa + DURACAO.curva + 250;
+    const fimRetangulos = inicioRetangulos + RETANGULOS.length * DURACAO.retangulos;
+    const pArea = progresso(t, fimRetangulos, DURACAO.area);
+
+    if (pArea > 0 && !cena.diverge) this.area(cena.f, lo, hi, pArea);
+    if (t >= inicioRetangulos) {
+      const indice = Math.min(RETANGULOS.length - 1, Math.floor((t - inicioRetangulos) / DURACAO.retangulos));
+      const n = RETANGULOS[indice]!;
+      const crescer = progresso(t, inicioRetangulos + indice * DURACAO.retangulos, 320);
+      const alfa = cena.diverge ? 1 : 1 - pArea;
+      if (alfa > 0) this.retangulos(cena.f, lo, hi, n, crescer, alfa);
+      if (n !== this.ultimoN) {
+        this.ultimoN = n;
+        this.ouvintes.aoSomar?.(n, somaDeRiemann(cena.f, cena.a, cena.b, n));
+      }
+    }
+    this.curva(cena.f, this.cores.f, pCurva);
+    this.limites(cena, pCurva);
+    if (cena.diverge && pArea > 0) this.singularidades(cena.singularidades, pArea, t);
+    if (pArea >= 1 && !this.terminou) {
+      this.terminou = true;
+      this.ouvintes.aoTerminar?.();
+    }
+    return pArea < 1 || cena.diverge;
+  }
+
+  /** Em que ponto do ciclo de aproximação estamos: vai de 0 a 1, fica um pouco parado e recomeça. */
+  private cicloDeAproximacao(t: number): number {
+    if (this.calmo) return 0.9;
+    const fase = ((t - DURACAO.pausa - DURACAO.curva) % 3600) / 2700;
+    return suavizar(Math.min(1, Math.max(0, fase)));
+  }
+
+  /** Limite num ponto: dois pontos chegam a x = a, um por cada lado, e o que acontece lá fica marcado. */
+  private aproximarDoPonto(cena: Extract<Cena, { tipo: 'limite' }>, t: number, alfa: number): void {
+    const { ctx } = this;
+    const { x0, x1 } = this.vista;
+    const a = cena.a;
+    const largura = Math.min(a - x0, x1 - a) * 0.85;
+    const d = largura * (1 - this.cicloDeAproximacao(t)) + largura * 0.004;
+    ctx.save();
+    ctx.globalAlpha = alfa;
+    // a reta x = a
+    ctx.strokeStyle = 'rgba(250, 204, 21, 0.7)';
+    ctx.setLineDash([5, 6]);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(this.px(a), 0);
+    ctx.lineTo(this.px(a), this.altura);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#fde68a';
+    ctx.font = `600 12px ${FONTE}`;
+    ctx.textAlign = 'center';
+    ctx.fillText(`x → ${cena.rotuloPonto}`, limitar(this.px(a), 36, this.largura - 36), 18);
+    // o que acontece em x = a
+    const lados: [ValorNoGrafico, -1 | 1][] = [
+      [cena.esquerda, -1],
+      [cena.direita, 1],
+    ];
+    if (lados.some(([v]) => v === '+∞' || v === '-∞')) this.singularidades([a], 1, t);
+    if (lados.some(([v]) => v === 'oscila')) {
+      ctx.fillStyle = 'rgba(251, 113, 133, 0.12)';
+      ctx.fillRect(this.px(a - largura * 0.25), 0, this.px(a + largura * 0.25) - this.px(a - largura * 0.25), this.altura);
+      ctx.fillStyle = this.cores.erro;
+      ctx.fillText('oscila', this.px(a), this.altura - 12);
+    }
+    // os dois pontos que chegam
+    const leituras: string[] = [];
+    for (const [, lado] of lados) {
+      const x = a + lado * d;
+      const y = cena.f(x);
+      if (!Number.isFinite(y)) continue;
+      const cor = lado < 0 ? this.cores.segunda : this.cores.tangente;
+      this.ponto(x, y, cor);
+      this.etiqueta(curto(y), x, y, cor);
+      leituras.push(`x = ${curto(x)} → f(x) = ${curto(y)}`);
+    }
+    // buracos nos limites laterais e o ponto cheio em f(a)
+    const finitos = lados.map(([v]) => v).filter((v): v is number => typeof v === 'number');
+    for (const L of finitos) if (cena.valorEmA === null || Math.abs(cena.valorEmA - L) > 1e-9) this.buraco(a, L);
+    if (cena.valorEmA !== null) this.ponto(a, cena.valorEmA, '#fde68a');
+    ctx.restore();
+    this.ler(leituras.join('   ·   '));
+  }
+
+  /** Limite no infinito: um ponto corre para longe e a assíntota horizontal aparece. */
+  private aproximarDoInfinito(cena: Extract<Cena, { tipo: 'limite' }>, t: number, alfa: number): void {
+    const { ctx } = this;
+    const { x0, x1 } = this.vista;
+    const L = cena.direita;
+    ctx.save();
+    ctx.globalAlpha = alfa;
+    if (typeof L === 'number') {
+      ctx.strokeStyle = 'rgba(250, 204, 21, 0.75)';
+      ctx.setLineDash([6, 6]);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(0, this.py(L));
+      ctx.lineTo(this.largura, this.py(L));
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#fde68a';
+      ctx.font = `600 12px ${FONTE}`;
+      ctx.textAlign = cena.a > 0 ? 'right' : 'left';
+      ctx.fillText(`y = ${curto(L)}`, cena.a > 0 ? this.largura - 10 : 10, this.py(L) - 8);
+    }
+    const p = 0.08 + 0.88 * this.cicloDeAproximacao(t);
+    const x = cena.a > 0 ? x0 + (x1 - x0) * p : x1 - (x1 - x0) * p;
+    const y = cena.f(x);
+    if (Number.isFinite(y)) {
+      this.ponto(x, y, this.cores.tangente);
+      this.etiqueta(curto(y), x, y, this.cores.tangente);
+      this.ler(`x = ${curto(x)} → f(x) = ${curto(y)}`);
+    }
+    ctx.restore();
+  }
+
+  /** Bola aberta: o limite lateral, que f não atinge em a. */
+  private buraco(x: number, y: number): void {
+    const { ctx } = this;
+    ctx.save();
+    ctx.fillStyle = '#0b1226';
+    ctx.strokeStyle = this.cores.f;
+    ctx.shadowColor = this.cores.f;
+    ctx.shadowBlur = 12;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(this.px(x), this.py(y), 6.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ─── Desenho ─────────────────────────────────────────────────────────────────
+
+  private px(x: number): number {
+    return ((x - this.vista.x0) / (this.vista.x1 - this.vista.x0)) * this.largura;
+  }
+
+  private py(y: number): number {
+    const { y0, y1 } = this.vista;
+    const altura = y1 - y0;
+    return this.altura - ((limitar(y, y0 - altura * 4, y1 + altura * 4) - y0) / altura) * this.altura;
+  }
+
+  private grade(alfa: number, trigonometrica: boolean): void {
+    const { ctx } = this;
+    const { x0, x1, y0, y1 } = this.vista;
+    const passoX = trigonometrica ? passoDePi(x1 - x0) : passoBonito((x1 - x0) / 10);
+    const passoY = passoBonito((y1 - y0) / 8);
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (let i = Math.ceil(x0 / passoX); i * passoX <= x1; i++) xs.push(i * passoX);
+    for (let i = Math.ceil(y0 / passoY); i * passoY <= y1; i++) ys.push(i * passoY);
+    ctx.save();
+    ctx.globalAlpha = alfa;
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.10)';
+    ctx.beginPath();
+    for (const x of xs) {
+      ctx.moveTo(this.px(x), 0);
+      ctx.lineTo(this.px(x), this.altura);
+    }
+    for (const y of ys) {
+      ctx.moveTo(0, this.py(y));
+      ctx.lineTo(this.largura, this.py(y));
+    }
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(226, 232, 240, 0.5)';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    if (y0 <= 0 && y1 >= 0) {
+      ctx.moveTo(0, this.py(0));
+      ctx.lineTo(this.largura, this.py(0));
+    }
+    if (x0 <= 0 && x1 >= 0) {
+      ctx.moveTo(this.px(0), 0);
+      ctx.lineTo(this.px(0), this.altura);
+    }
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(203, 213, 225, 0.75)';
+    ctx.font = `500 11px ${FONTE}`;
+    ctx.textAlign = 'center';
+    const linhaX = limitar(this.py(0) + 15, 14, this.altura - 6);
+    for (const x of xs) {
+      if (Math.abs(x) < passoX / 2) continue;
+      ctx.fillText(trigonometrica ? rotuloDePi(x) : curto(x), this.px(x), linhaX);
+    }
+    ctx.textAlign = 'left';
+    const colunaY = limitar(this.px(0) + 6, 4, this.largura - 34);
+    for (const y of ys) {
+      if (Math.abs(y) < passoY / 2) continue;
+      ctx.fillText(curto(y), colunaY, this.py(y) - 4);
+    }
+    ctx.restore();
+  }
+
+  /** A curva, desenhada até `progresso` da largura; quebra nas assíntotas (tg, 1/x), onde f não existe e em `quebras`. */
+  private curva(f: Funcao, cor: string, progressoDaCurva: number, espessura = 2.6, quebras: number[] = []): void {
+    if (progressoDaCurva <= 0) return;
+    const { ctx } = this;
+    const { x0, x1, y0, y1 } = this.vista;
+    const altura = y1 - y0;
+    const n = Math.max(240, Math.floor(this.largura / 1.5));
+    const limite = x0 + (x1 - x0) * progressoDaCurva;
+    let anterior: number | null = null;
+    let xAnterior = Number.NEGATIVE_INFINITY;
+    let ponta: [number, number] | null = null;
+    ctx.save();
+    ctx.strokeStyle = cor;
+    ctx.lineWidth = espessura;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.shadowColor = cor;
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    for (let i = 0; i <= n; i++) {
+      const x = x0 + ((x1 - x0) * i) / n;
+      if (x > limite) break;
+      const y = f(x);
+      if (!Number.isFinite(y) || Math.abs(y - (y0 + y1) / 2) > altura * 50) {
+        anterior = null;
+        continue;
+      }
+      const salto = anterior !== null && Math.abs(y - anterior) > altura * 2.5;
+      const cruzouQuebra = quebras.some((q) => xAnterior < q && x >= q);
+      if (anterior === null || salto || cruzouQuebra) ctx.moveTo(this.px(x), this.py(y));
+      else ctx.lineTo(this.px(x), this.py(y));
+      anterior = y;
+      xAnterior = x;
+      ponta = [x, y];
+    }
+    ctx.stroke();
+    ctx.restore();
+    if (progressoDaCurva < 1 && ponta) this.ponto(ponta[0], ponta[1], cor);
+  }
+
+  /** Área entre a curva e o eixo x, de l a r: acima do eixo numa cor, abaixo em outra. */
+  private area(f: Funcao, l: number, r: number, alfa: number): void {
+    if (r - l < 1e-12) return;
+    const { ctx } = this;
+    const n = 260;
+    const zero = this.py(0);
+    const pontos: [number, number][] = [];
+    for (let i = 0; i <= n; i++) {
+      const x = l + ((r - l) * i) / n;
+      const y = f(x);
+      pontos.push([this.px(x), Number.isFinite(y) ? this.py(y) : zero]);
+    }
+    for (const [acima, cor] of [
+      [true, this.cores.positiva],
+      [false, this.cores.negativa],
+    ] as const) {
+      ctx.save();
+      ctx.beginPath();
+      if (acima) ctx.rect(0, 0, this.largura, zero);
+      else ctx.rect(0, zero, this.largura, this.altura - zero);
+      ctx.clip();
+      ctx.beginPath();
+      ctx.moveTo(this.px(l), zero);
+      for (const [x, y] of pontos) ctx.lineTo(x, y);
+      ctx.lineTo(this.px(r), zero);
+      ctx.closePath();
+      ctx.globalAlpha = alfa;
+      ctx.fillStyle = cor;
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  /** Retângulos de Riemann com o ponto médio; `crescer` vai de 0 a 1 enquanto eles sobem do eixo. */
+  private retangulos(f: Funcao, lo: number, hi: number, n: number, crescer: number, alfa: number): void {
+    const { ctx } = this;
+    const largura = (hi - lo) / n;
+    const zero = this.py(0);
+    ctx.save();
+    for (let i = 0; i < n; i++) {
+      const y = f(lo + (i + 0.5) * largura);
+      if (!Number.isFinite(y)) continue;
+      const xa = this.px(lo + i * largura);
+      const xb = this.px(lo + (i + 1) * largura);
+      const topo = zero + (this.py(y) - zero) * crescer;
+      const [cima, alto] = [Math.min(zero, topo), Math.abs(topo - zero)];
+      ctx.globalAlpha = alfa;
+      ctx.fillStyle = y >= 0 ? this.cores.positiva : this.cores.negativa;
+      ctx.fillRect(xa, cima, xb - xa, alto);
+      if (xb - xa > 3) {
+        ctx.globalAlpha = alfa * 0.6;
+        ctx.strokeStyle = y >= 0 ? this.cores.f : this.cores.erro;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(xa + 0.5, cima, xb - xa - 1, alto);
+      }
+    }
+    ctx.restore();
+  }
+
+  private limites(cena: Extract<Cena, { tipo: 'definida' }>, alfa: number): void {
+    const { ctx } = this;
+    ctx.save();
+    ctx.globalAlpha = alfa;
+    ctx.font = `600 12px ${FONTE}`;
+    ctx.textAlign = 'center';
+    for (const [valor, rotulo] of [
+      [cena.a, `a = ${cena.rotulos[0]}`],
+      [cena.b, `b = ${cena.rotulos[1]}`],
+    ] as const) {
+      const x = this.px(valor);
+      ctx.strokeStyle = 'rgba(250, 204, 21, 0.75)';
+      ctx.setLineDash([5, 6]);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, this.altura);
+      ctx.stroke();
+      ctx.fillStyle = '#fde68a';
+      ctx.fillText(rotulo, limitar(x, 28, this.largura - 28), 18);
+    }
+    ctx.restore();
+  }
+
+  /** Onde a integral imprópria explode: linha vermelha pulsando e o ∞. */
+  private singularidades(pontos: number[], alfa: number, t: number): void {
+    const { ctx } = this;
+    const pulso = this.calmo ? 1 : 0.65 + 0.35 * Math.sin(t / 260);
+    ctx.save();
+    ctx.globalAlpha = alfa * pulso;
+    for (const c of pontos) {
+      const x = this.px(c);
+      ctx.strokeStyle = this.cores.erro;
+      ctx.shadowColor = this.cores.erro;
+      ctx.shadowBlur = 18;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, this.altura);
+      ctx.stroke();
+      ctx.fillStyle = this.cores.erro;
+      ctx.font = `700 30px ${FONTE}`;
+      ctx.textAlign = 'center';
+      ctx.fillText('∞', limitar(x + 22, 20, this.largura - 20), 48);
+    }
+    ctx.restore();
+  }
+
+  private segmento(xa: number, ya: number, xb: number, yb: number, cor: string, espessura: number): void {
+    const { ctx } = this;
+    ctx.save();
+    ctx.strokeStyle = cor;
+    ctx.lineWidth = espessura;
+    ctx.shadowColor = cor;
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.moveTo(this.px(xa), this.py(ya));
+    ctx.lineTo(this.px(xb), this.py(yb));
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  private tracejado(xa: number, ya: number, xb: number, yb: number, cor: string): void {
+    const { ctx } = this;
+    ctx.save();
+    ctx.strokeStyle = cor;
+    ctx.globalAlpha *= 0.8;
+    ctx.setLineDash([4, 5]);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(this.px(xa), this.py(ya));
+    ctx.lineTo(this.px(xb), this.py(yb));
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  private ponto(x: number, y: number, cor: string): void {
+    const { ctx } = this;
+    const [cx, cy] = [this.px(x), this.py(y)];
+    ctx.save();
+    ctx.fillStyle = cor;
+    ctx.shadowColor = cor;
+    ctx.shadowBlur = 16;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#0b1020';
+    ctx.beginPath();
+    ctx.arc(cx, cy, 2.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  private etiqueta(texto: string, x: number, y: number, cor: string): void {
+    const { ctx } = this;
+    ctx.save();
+    ctx.font = `600 12px ${FONTE}`;
+    const largura = ctx.measureText(texto).width + 16;
+    const altura = 24;
+    let cx = this.px(x) + 12;
+    let cy = this.py(y) - altura - 10;
+    if (cx + largura > this.largura - 4) cx = this.px(x) - largura - 12;
+    if (cy < 4) cy = this.py(y) + 12;
+    ctx.fillStyle = 'rgba(7, 11, 24, 0.86)';
+    ctx.strokeStyle = cor;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(cx, cy, largura, altura, 8);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = cor;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(texto, cx + 8, cy + altura / 2 + 0.5);
+    ctx.restore();
+  }
+
+  private ler(texto: string): void {
+    if (texto === this.ultimaLeitura) return;
+    this.ultimaLeitura = texto;
+    this.ouvintes.aoLer?.(texto);
+  }
+}
+
+// ─── Contas do gráfico ─────────────────────────────────────────────────────────
+
+/** Soma de Riemann pelo ponto médio, com o sinal dos limites (de a até b). NaN se f não existir num ponto médio. */
+export function somaDeRiemann(f: Funcao, a: number, b: number, n: number): number {
+  const h = (b - a) / n;
+  let soma = 0;
+  for (let i = 0; i < n; i++) soma += f(a + (i + 0.5) * h) * h;
+  return soma;
+}
+
+/** Janela do limite: em volta do ponto, mais estreita quando f oscila; no infinito, um bom trecho para o lado certo. */
+function janelaDoLimite(cena: Extract<Cena, { tipo: 'limite' }>): [number, number] {
+  if (!Number.isFinite(cena.a)) return cena.a > 0 ? [0, 24] : [-24, 0];
+  const oscila = cena.esquerda === 'oscila' || cena.direita === 'oscila';
+  const raio = oscila ? 0.8 : cena.trigonometrica ? Math.PI : 3;
+  return [cena.a - raio, cena.a + raio];
+}
+
+function comMargem(a: number, b: number): [number, number] {
+  const [lo, hi] = [Math.min(a, b), Math.max(a, b)];
+  const d = hi - lo || 1;
+  return [lo - d * 0.18, hi + d * 0.18];
+}
+
+/** Faixa vertical que mostra bem as curvas: ignora os 3% mais extremos (assíntotas) e inclui o eixo x. */
+function faixaVertical(curvas: Funcao[], x0: number, x1: number): { y0: number; y1: number } {
+  const ys: number[] = [];
+  for (const f of curvas) {
+    for (let i = 0; i <= 400; i++) {
+      const y = f(x0 + ((x1 - x0) * i) / 400);
+      if (Number.isFinite(y)) ys.push(y);
+    }
+  }
+  if (ys.length === 0) return { y0: -5, y1: 5 };
+  ys.sort((p, q) => p - q);
+  let baixo = Math.min(0, ys[Math.floor(ys.length * 0.03)]!);
+  let alto = Math.max(0, ys[Math.min(ys.length - 1, Math.ceil(ys.length * 0.97))]!);
+  if (alto - baixo < 1e-6) {
+    baixo -= 1;
+    alto += 1;
+  }
+  // Folga maior em cima: lá ficam os rótulos de a e b e o placar da soma de Riemann
+  const altura = alto - baixo;
+  return { y0: baixo - altura * 0.14, y1: alto + altura * 0.26 };
+}
+
+/** De onde a área começa a acumular (0, se f existir ali) e até onde f segue sem interrupção. */
+function acharPartida(f: Funcao, x0: number, x1: number): { partida: number; trecho: [number, number] } {
+  const existe = (x: number): boolean => Number.isFinite(f(x));
+  const candidatos = [0, 1, -1, 0.5, -0.5, 2, -2, (x0 + x1) / 2];
+  const partida = candidatos.find((c) => c > x0 && c < x1 && existe(c) && existe(c - 1e-4) && existe(c + 1e-4)) ?? (x0 + x1) / 2;
+  const { y0, y1 } = faixaVertical([f], x0, x1);
+  const escala = y1 - y0;
+  const passo = (x1 - x0) / 800;
+  const andar = (sentido: 1 | -1): number => {
+    let x = partida;
+    let y = f(x);
+    for (let i = 0; i < 1600; i++) {
+      const proximo = x + sentido * passo;
+      if (proximo < x0 || proximo > x1) return limitar(proximo, x0, x1);
+      const yp = f(proximo);
+      if (!Number.isFinite(yp) || Math.abs(yp - y) > escala * 2 || Math.abs(yp) > escala * 30) return x;
+      x = proximo;
+      y = yp;
+    }
+    return x;
+  };
+  return { partida, trecho: [andar(-1), andar(1)] };
+}
+
+/** 1, 2 ou 5 vezes uma potência de 10, perto de `bruto`. */
+function passoBonito(bruto: number): number {
+  const potencia = 10 ** Math.floor(Math.log10(bruto));
+  const fracao = bruto / potencia;
+  return (fracao < 1.5 ? 1 : fracao < 3.5 ? 2 : fracao < 7.5 ? 5 : 10) * potencia;
+}
+
+/** Marcas em múltiplos de π para gráficos de seno e cosseno. */
+function passoDePi(faixa: number): number {
+  const candidatos = [Math.PI / 4, Math.PI / 2, Math.PI, 2 * Math.PI];
+  return candidatos.find((p) => faixa / p <= 12) ?? 2 * Math.PI;
+}
+
+function rotuloDePi(x: number): string {
+  const quartos = Math.round(x / (Math.PI / 4));
+  const mdc = (a: number, b: number): number => (b === 0 ? a : mdc(b, a % b));
+  const g = mdc(Math.abs(quartos), 4);
+  const [p, q] = [quartos / g, 4 / g];
+  const numerador = p === 1 ? 'π' : p === -1 ? '−π' : `${String(p).replace('-', '−')}π`;
+  return q === 1 ? numerador : `${numerador}/${q}`;
+}
