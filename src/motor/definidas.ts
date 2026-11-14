@@ -182,19 +182,22 @@ function exigirValor(e: Expr, v: string, lo: number, hi: number, excecoes: numbe
 
 /**
  * Zeros de h em [lo, hi]: trocas de sinal, refinadas por bisseção, e zeros sem troca de sinal
- * (como x² em 0), achados como mínimos de |h| que chegam a zero.
+ * (como x² em 0), achados como mínimos de |h| que chegam a zero. Nas pontas não há vizinho dos
+ * dois lados, então o zero ali é reconhecido pelo tamanho do valor: em ponto flutuante cos(π/2)
+ * dá 6·10⁻¹⁷, e não 0. Sem isso, ∫ de 0 a π/2 de tg x saía 37,33 em vez de divergir.
  */
 function zeros(h: (t: number) => number, lo: number, hi: number): number[] {
   const xs = Array.from({ length: DIVISOES + 1 }, (_, i) => (i === DIVISOES ? hi : lo + ((hi - lo) * i) / DIVISOES));
   const ys = xs.map(h);
   const escala = ys.reduce((maior, y) => (Number.isFinite(y) ? Math.max(maior, Math.abs(y)) : maior), 0);
+  const pontaZerada = (i: number, y: number): boolean => (i === 0 || i === xs.length - 1) && Math.abs(y) <= 1e-12 * Math.max(1, escala);
   const achados: number[] = [];
   for (let i = 0; i < xs.length; i++) {
     const t = xs[i]!;
     const y = ys[i]!;
     const [antes, depois] = [ys[i - 1], ys[i + 1]];
     if (Number.isNaN(y)) continue;
-    if (y === 0) {
+    if (y === 0 || pontaZerada(i, y)) {
       achados.push(t);
       continue;
     }

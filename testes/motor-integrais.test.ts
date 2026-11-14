@@ -169,4 +169,45 @@ describe('Integrais definidas (Aula 4, quadro 10)', () => {
     expect(() => integralDefinida('sqrt(x)', -1, 1)).toThrow(ErroDeEntrada);
     expect(() => integralDefinida('sqrt(x)', -1, 1)).toThrow(/não tem valor real/);
   });
+
+  describe('singularidade numa ponta do intervalo: a integral diverge em vez de virar um número', () => {
+    // Em ponto flutuante cos(π/2) dá 6·10⁻¹⁷, e não 0: sem olhar as pontas, ∫ de 0 a π/2 de sec²x saía 16331239353195370.
+    const casos: [string, string, string, number][] = [
+      ['tg(x)', '0', 'pi/2', Math.PI / 2],
+      ['sec(x)^2', '0', 'pi/2', Math.PI / 2],
+      ['sec(x)', '0', 'pi/2', Math.PI / 2],
+      ['sen(x)/cos(x)', '0', 'pi/2', Math.PI / 2],
+      ['tg(x)', '-pi/2', '0', -Math.PI / 2],
+      ['cotg(x)', 'pi/4', 'pi', Math.PI],
+      ['csc(x)^2', 'pi/2', 'pi', Math.PI],
+    ];
+    for (const [f, a, b, ponta] of casos) {
+      it(`∫ de ${a} a ${b} de ${f} diverge`, () => {
+        const r = integralDefinida(f, a, b);
+        expect(r.valor).toBe('diverge');
+        expect(r.descontinuidades).toHaveLength(1);
+        expect(r.descontinuidades[0]).toBeCloseTo(ponta, 9);
+      });
+    }
+
+    it('a frase do TFC aponta a ponta: tg(x) não existe em x = pi/2', () => {
+      expect(descreverIntegralDefinida(integralDefinida('tg(x)', '0', 'pi/2'))).toEqual([
+        'Primitiva de tg(x): F(x) = -ln(abs(cos(x)))',
+        'tg(x) não existe em x = pi/2, dentro de [0, pi/2]: o TFC pede f contínua em [a, b].',
+        'F também não tem valor em x = pi/2: a integral imprópria diverge.',
+      ]);
+    });
+
+    it('sem singularidade na ponta, o TFC vale direto: ∫ de 0 a pi/4 de sec(x)^2 = 1', () => {
+      const r = integralDefinida('sec(x)^2', '0', 'pi/4');
+      expect(r.descontinuidades).toEqual([]);
+      expect(r.valor).toBeCloseTo(1, 12);
+    });
+
+    it('imprópria que converge na ponta de cima: ∫ de 0 a 1 de 1/sqrt(1 - x) = 2', () => {
+      const r = integralDefinida('1/sqrt(1 - x)', '0', '1');
+      expect(r.descontinuidades).toEqual([1]);
+      expect(r.valor).toBeCloseTo(2, 12);
+    });
+  });
 });
