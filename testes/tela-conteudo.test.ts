@@ -15,6 +15,7 @@ import { integrar } from '../src/motor/integrais';
 import { calcularLimite, lerPonto } from '../src/motor/limites';
 import {
   AULAS,
+  CARRO,
   CONTAS,
   LAB_DERIVADAS,
   LAB_FUNCOES,
@@ -23,9 +24,13 @@ import {
   LIMITES_ESPECIAIS,
   TABELA_DERIVADAS,
   TABELA_INTEGRAIS,
+  chegadaNaLombada,
+  contaDaFrenagem,
   htmlDaAula,
   notacao,
   passoDaSecante,
+  posicaoNoInstante,
+  velocidadeNoInstante,
 } from '../src/tela/conteudos';
 import type { Conta } from '../src/tela/conteudos';
 
@@ -228,6 +233,66 @@ describe('Laboratórios', () => {
   });
 });
 
+describe('O carro chegando na lombada', () => {
+  it('com 1 s de reação e freada de 4 m/s², chega em t = 4 s a 8 m/s (28,8 km/h): 20 m de reação e 42 m freando', () => {
+    const c = chegadaNaLombada(CARRO.reacao, CARRO.freada);
+    expect(c.parou).toBe(false);
+    expect(c.tempo).toBeCloseTo(4, 12);
+    expect(c.velocidade).toBeCloseTo(8, 12);
+    expect(c.velocidade * 3.6).toBeCloseTo(28.8, 12);
+    expect([c.reacaoM, c.frenagemM]).toEqual([20, 42]);
+  });
+
+  it('as contas da história batem com o motor', () => {
+    expect(analisarFuncao('-2*x^2 + 24*x - 2').quadratica?.vertice).toEqual([6, 70]);
+    expect(valorDe(ler('-2*x^2 + 24*x - 2'), 1)).toBe(20); // o freio entra nos 20 m
+    expect(valorDe(ler('-2*x^2 + 24*x - 2'), 4)).toBe(62); // e o carro chega à lombada em t = 4
+    mesmaFuncao(derivar('-2*x^2 + 24*x - 2').resultado, ler('24 - 4*x'), 'v = s′');
+    expect(integralDefinida('20', '0', '1').valor).toBeCloseTo(20, 12);
+    expect(integralDefinida('24 - 4*x', '1', '4').valor).toBeCloseTo(42, 12);
+    const aceleracao = calcularLimite('x < 1 ? 0 : -4', '1');
+    expect([aceleracao.esquerda, aceleracao.direita, aceleracao.descontinuidade]).toEqual([0, -4, 'salto']);
+    const velocidade = calcularLimite('x < 1 ? 20 : 24 - 4*x', '1');
+    expect(velocidade.limite).toBe(20);
+    expect(velocidade.descontinuidade).toBeUndefined();
+    // a primitiva da velocidade é a posição, a menos da constante (C = −2)
+    diferemPorConstante(integrar('24 - 4*x').resultado, ler('-2*x^2 + 24*x - 2'), 'posição');
+  });
+
+  it('o número do texto: com 1,5 s de reação sobram 32 m para frear e o carro chega a 43,2 km/h', () => {
+    const c = chegadaNaLombada(1.5, CARRO.freada);
+    expect(c.frenagemM).toBe(32);
+    expect(c.velocidade * 3.6).toBeCloseTo(43.2, 12);
+  });
+
+  it('em toda posição dos controles, o carro chega à lombada (ou para antes), e o motor confirma os metros freando', () => {
+    const reacoes = Array.from({ length: 16 }, (_, i) => Number((0.5 + 0.1 * i).toFixed(1)));
+    const freadas = Array.from({ length: 11 }, (_, i) => 2 + 0.5 * i);
+    let pararam = 0;
+    for (const r of reacoes) {
+      for (const a of freadas) {
+        const c = chegadaNaLombada(r, a);
+        const rotulo = `reação ${r} s, freada ${a} m/s²`;
+        if (c.parou) {
+          pararam++;
+          expect(posicaoNoInstante(c, c.tempo), rotulo).toBeLessThanOrEqual(CARRO.distancia + 1e-9);
+        } else expect(posicaoNoInstante(c, c.tempo), rotulo).toBeCloseTo(CARRO.distancia, 9);
+        expect(velocidadeNoInstante(c, c.tempo), rotulo).toBeCloseTo(c.velocidade, 9);
+        // a posição do laboratório é a integral da velocidade: a derivada numérica volta a ela
+        for (const t of [0.3, r + 0.2, (r + c.tempo) / 2]) {
+          const d = (posicaoNoInstante(c, t + 1e-6) - posicaoNoInstante(c, t - 1e-6)) / 2e-6;
+          expect(d, `${rotulo}, t = ${t}`).toBeCloseTo(velocidadeNoInstante(c, t), 4);
+        }
+        // a conta que o botão abre na calculadora dá os mesmos metros freando
+        const conta = contaDaFrenagem(c);
+        conferir(conta);
+        expect(integralDefinida(conta.f, conta.a ?? '', conta.b ?? '').valor as number, rotulo).toBeCloseTo(c.frenagemM, 9);
+      }
+    }
+    expect(pararam).toBeGreaterThan(0); // freada forte e reação rápida: para antes da lombada
+  });
+});
+
 describe('HTML das aulas', () => {
   const VAZIOS = new Set(['br', 'hr', 'img', 'input', 'meta', 'link', 'wbr']);
 
@@ -249,7 +314,7 @@ describe('HTML das aulas', () => {
     const html = htmlDaAula(aula);
     expect(balanceado(html)).toEqual([]);
     for (const m of html.matchAll(/data-conta="(\d+)"/g)) expect(Number(m[1])).toBeLessThan(CONTAS.length);
-    for (const m of html.matchAll(/data-lab="([a-z]+)"/g)) expect(['funcoes', 'circulo', 'limites', 'derivadas', 'integrais']).toContain(m[1]);
+    for (const m of html.matchAll(/data-lab="([a-z]+)"/g)) expect(['funcoes', 'circulo', 'limites', 'derivadas', 'integrais', 'lombada']).toContain(m[1]);
     expect(html).not.toMatch(/undefined|NaN/);
   });
 
@@ -258,6 +323,7 @@ describe('HTML das aulas', () => {
       const html = htmlDaAula(aula);
       expect(html).toContain('data-lab=');
       expect(html).toContain('class="historia"');
+      expect(html).toContain('data-lab="lombada"');
     }
   });
 });

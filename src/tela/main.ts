@@ -65,13 +65,13 @@ const EXEMPLOS: Record<Modo, Exemplo[]> = {
     },
     {
       f: '20*x',
-      rotulo: '🚗 distância',
-      contexto: 'Distância percorrida pelo carro, em metros, x segundos depois de passar pelo marco zero, a 20 m/s.',
+      rotulo: '🚗 reação',
+      contexto: 'Distância, em metros, que o carro anda x segundos depois de o motorista ver a lombada, enquanto ele ainda não freou: o carro segue a 20 m/s.',
       leitura:
-        'A distância é proporcional ao tempo: em 2 s o carro anda 40 m; em 4 s, o dobro, 80 m. A taxa a = 20 é a própria velocidade. No problema, só faz sentido x ≥ 0.',
+        'A distância é proporcional ao tempo: no 1 s de reação o carro anda 20 m; se o motorista demorasse 2 s, seriam 40 m, o dobro. A taxa a = 20 é a própria velocidade. No problema, só faz sentido x ≥ 0.',
       janela: [-1, 10],
       entradas: [0, 1, 2, 3, 4, 5],
-      avaliar: '4',
+      avaliar: '1',
     },
     {
       f: '20*x + 100',
@@ -84,14 +84,14 @@ const EXEMPLOS: Record<Modo, Exemplo[]> = {
       avaliar: '5',
     },
     {
-      f: '20*x - 2*x^2',
+      f: '-2*x^2 + 24*x - 2',
       rotulo: '🚗 frenagem',
-      contexto: 'Posição do carro, em metros, desde o instante em que o motorista pisa no freio: ele vinha a 20 m/s e perde 4 m/s a cada segundo.',
+      contexto: 'Posição do carro, em metros desde onde o motorista viu a lombada, depois que o freio entra: ele vinha a 20 m/s e perde 4 m/s a cada segundo. x é o tempo, em segundos; o freio entra em x = 1.',
       leitura:
-        'O vértice (5, 50) é onde o carro para: depois de 5 s de frenagem, ele percorreu 50 m, e a imagem (−∞, 50] diz que ele nunca passa dos 50 m. A fórmula só vale até o carro parar, de x = 0 a x = 5.',
-      janela: [-1, 11],
-      entradas: [0, 1, 2, 3, 4, 5],
-      avaliar: '5',
+        'Em x = 1 o freio entra, com o carro nos 20 m; em x = 4 ele chega à lombada, nos 62 m. O vértice (6, 70) é onde ele pararia se não soltasse o freio: 8 m depois da lombada, e a imagem (−∞, 70] diz que ele nunca passaria dos 70 m. A fórmula só vale de x = 1 até a lombada.',
+      janela: [-1, 9],
+      entradas: [1, 2, 3, 4, 5, 6],
+      avaliar: '4',
     },
     {
       f: 'abs(20*x - 100)',
@@ -141,20 +141,20 @@ const EXEMPLOS: Record<Modo, Exemplo[]> = {
     { f: 'sen(1/x)', ponto: '0' },
     { f: '(3*x^2 + 1)/(2*x^2 - x)', ponto: 'inf' },
     {
-      f: 'x < 5 ? 2 : -3',
-      ponto: '5',
+      f: 'x < 1 ? 0 : -4',
+      ponto: '1',
       rotulo: '🚗 aceleração',
-      contexto: 'Aceleração de um veículo (x é o tempo, em segundos): 2 m/s² até t = 5 s, quando o motorista começa a frear, e −3 m/s² depois.',
+      contexto: 'Aceleração do carro que vê a lombada (x é o tempo, em segundos): 0 durante 1 s de reação, com o carro a 20 m/s, e −4 m/s² depois, quando o freio entra.',
       leitura:
-        'No instante t = 5 s a aceleração salta de 2 para −3 m/s²: não existe um valor do qual ela se aproxime nesse instante. É o momento exato em que o freio entra.',
+        'No instante t = 1 s a aceleração salta de 0 para −4 m/s²: não existe um valor do qual ela se aproxime nesse instante. É o momento exato em que o freio entra.',
     },
     {
-      f: 'x < 5 ? 2*x : 10 - 3*(x - 5)',
-      ponto: '5',
+      f: 'x < 1 ? 20 : 24 - 4*x',
+      ponto: '1',
       rotulo: '🚗 velocidade',
-      contexto: 'Velocidade do mesmo veículo, saindo do repouso: v = 2t até t = 5 s e v = 10 − 3(t − 5) depois, em m/s.',
+      contexto: 'Velocidade do mesmo carro, em m/s: 20 durante a reação e 24 − 4t depois que o freio entra.',
       leitura:
-        'A velocidade chega a 10 m/s pelos dois lados: ela não salta, mesmo com a aceleração saltando. O carro muda o ritmo em t = 5 s, mas a velocidade passa por esse instante sem pular de valor.',
+        'A velocidade chega a 20 m/s pelos dois lados: ela não salta, mesmo com a aceleração saltando. Mas o gráfico faz uma quina em t = 1 s, porque a inclinação passa de 0 para −4: ali a velocidade não tem derivada.',
     },
   ],
   derivada: [
@@ -165,6 +165,13 @@ const EXEMPLOS: Record<Modo, Exemplo[]> = {
     { f: 'ln(cos(x))' },
     { f: 'sen(x)/x' },
     { f: 'x^3 - 4*x + 2' },
+    {
+      f: '-2*x^2 + 24*x - 2',
+      rotulo: '🚗 frenagem',
+      contexto: 'Posição do carro durante a frenagem, em metros desde onde o motorista viu a lombada; x é o tempo, em segundos, e o freio entra em x = 1.',
+      leitura:
+        'A derivada da posição é a velocidade: v(t) = 24 − 4t. Em t = 1 ela vale 20 m/s, a velocidade de antes do freio; na lombada, em t = 4, vale 8 m/s (28,8 km/h). O −4 é a aceleração: o carro perde 4 m/s a cada segundo.',
+    },
   ],
   integral: [
     { f: '2*x*cos(x^2)' },
@@ -174,6 +181,13 @@ const EXEMPLOS: Record<Modo, Exemplo[]> = {
     { f: '1/x' },
     { f: 'tg(x)' },
     { f: 'sec(x)*tg(x)' },
+    {
+      f: '24 - 4*x',
+      rotulo: '🚗 velocidade',
+      contexto: 'Velocidade do carro durante a frenagem, em m/s; x é o tempo, em segundos.',
+      leitura:
+        'A primitiva é a posição, a menos de uma constante: 24t − 2t² + C. Como o carro está nos 20 m quando o freio entra, em t = 1, a constante é −2, e volta s(t) = −2t² + 24t − 2.',
+    },
   ],
   definida: [
     { f: 'sen(x)', a: '0', b: 'pi' },
@@ -181,6 +195,14 @@ const EXEMPLOS: Record<Modo, Exemplo[]> = {
     { f: 'abs(sen(x))', a: '0', b: '2*pi' },
     { f: '1/x', a: '1', b: 'e' },
     { f: '1/x^2', a: '-1', b: '1' },
+    {
+      f: '24 - 4*x',
+      a: '1',
+      b: '4',
+      rotulo: '🚗 frenagem',
+      contexto: 'Velocidade do carro durante a frenagem, em m/s, de t = 1 s, quando o freio entra, até t = 4 s, quando ele chega à lombada.',
+      leitura: 'A área debaixo da velocidade é a distância andada freando: 42 m. Somados aos 20 m do 1 s de reação, dão os 62 m até a lombada.',
+    },
   ],
 };
 
@@ -291,6 +313,17 @@ let veioDeExemplo = true;
 /** O exemplo do veículo em uso, para mostrar o problema e a leitura física do resultado. */
 let exemploAtual: Exemplo | null = null;
 let ultimaCena: Cena | null = null;
+
+/**
+ * O problema do carro e a leitura do resultado, nos modos Derivada, Integral e Integral definida,
+ * quando a conta veio de um exemplo 🚗 deste modo, com este texto (e, na definida, estes limites).
+ */
+function textoDoExemplo(m: Modo, texto: string, limites?: { a: string; b: string }): string {
+  const e = exemploAtual;
+  if (!e?.contexto || e.f !== texto || !EXEMPLOS[m].includes(e)) return '';
+  if (limites && (e.a !== limites.a || e.b !== limites.b)) return '';
+  return `<p class="contexto">${escapar(e.contexto)}</p>${e.leitura ? `<p class="interpretacao">${escapar(e.leitura)}</p>` : ''}`;
+}
 let ultimosPassos: ItemPasso[] = [];
 let aoTerminarDefinida: (() => void) | null = null;
 
@@ -537,6 +570,7 @@ function mostrarDerivada(texto: string): void {
     `<span class="nome-funcao">f′(${X})</span>${IGUAL}${formulaHTML(r.resultado)}`,
     r.regrasUsadas,
     conferirDerivada(f, df),
+    textoDoExemplo('derivada', texto),
   );
   mostrarPassos(r.passos.map(passoDaDerivada));
   mostrarNoGrafico(
@@ -558,6 +592,7 @@ function mostrarIntegral(texto: string): void {
     `${integralHTML(r.entrada, 'x')}${IGUAL}${formulaHTML(F)}${MAIS_C}`,
     r.regrasUsadas,
     conferirIntegral(r.entrada, F),
+    textoDoExemplo('integral', texto),
   );
   mostrarPassos(r.passos.map(passoDaIntegral));
   mostrarNoGrafico(
@@ -583,6 +618,7 @@ function mostrarDefinida(texto: string): void {
     `${integralHTML(r.entrada, 'x', { a: formulaHTML(r.a), b: formulaHTML(r.b) })}${IGUAL}${final}`,
     diverge ? ['descontinuidade'] : ['tfc', ...r.primitiva.regrasUsadas],
     conferirDefinida(r, a, b),
+    textoDoExemplo('definida', texto, { a: campoA.value.trim(), b: campoB.value.trim() }),
   );
   if (!diverge) contarAte(resultado.querySelector<HTMLElement>('.valor'), valor);
   mostrarPassos([...r.primitiva.passos.map(passoDaIntegral), ...passosDaDefinida(r, a, b)]);

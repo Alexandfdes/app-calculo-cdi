@@ -2234,6 +2234,34 @@ h2 {
   color: #fecdd3;
 }
 
+.lab-nota.ok {
+  border-color: rgba(74, 222, 128, 0.4);
+  background: rgba(74, 222, 128, 0.1);
+  color: #dcfce7;
+}
+
+/* O laboratório da lombada, dentro da história do carro: a estrada em cima e a velocidade embaixo */
+.historia-lab {
+  margin: 22px 0 4px;
+  font-size: 1rem;
+}
+
+.lab-telas {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.lab-estrada canvas {
+  aspect-ratio: 4 / 1;
+  cursor: default;
+}
+
+.lab-velocidade canvas {
+  aspect-ratio: 2 / 1;
+  cursor: default;
+}
+
 .lab-saida {
   min-height: 1.7em;
   font-size: 1.02rem;

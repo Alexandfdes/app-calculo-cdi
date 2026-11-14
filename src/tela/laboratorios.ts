@@ -5,6 +5,8 @@
  * - Limites: x chega perto de a pelos dois lados.
  * - Derivadas: h encolhe e a secante vira a tangente.
  * - Integrais: os retângulos de Riemann se multiplicam até virar a área.
+ * - A lombada (na história do carro, em todas as aulas): o tempo de reação e a freada mudam a
+ *   velocidade com que o carro chega, e a área debaixo da velocidade é a distância andada.
  * As contas exatas vêm do motor, as mesmas da calculadora; os casos de cada laboratório ficam em
  * conteudos.ts, onde o teste confere cada um. O desenho é em canvas, sem biblioteca, no estilo
  * do gráfico principal. Com "reduzir movimento" ligado, o ▶ pula direto para o fim.
@@ -18,7 +20,19 @@ import type { AnaliseFuncao, Conjunto } from '../motor/funcoes';
 import { avaliarFuncao, calcularLimite, lerFuncaoDoLimite } from '../motor/limites';
 import type { FuncaoDoLimite, ResultadoLimite, ValorLimite } from '../motor/limites';
 import { numeroParaLer, paraLer } from '../motor/numeros';
-import { LAB_DERIVADAS, LAB_FUNCOES, LAB_INTEGRAIS, LAB_LIMITES, notacao, passoDaSecante } from './conteudos';
+import {
+  CARRO,
+  LAB_DERIVADAS,
+  LAB_FUNCOES,
+  LAB_INTEGRAIS,
+  LAB_LIMITES,
+  chegadaNaLombada,
+  contaDaFrenagem,
+  notacao,
+  passoDaSecante,
+  posicaoNoInstante,
+  velocidadeNoInstante,
+} from './conteudos';
 import type { Conta, Janela } from './conteudos';
 import { escapar, formulaHTML, integralHTML } from './formula';
 import { curto, passoBonito, passoDePi, rotuloDePi } from './grafico';
@@ -1313,6 +1327,194 @@ function laboratorioDeIntegrais(raiz: HTMLElement, aoCalcular: AoCalcular): Desm
   };
 }
 
+// ─── A história: o carro chegando na lombada ───────────────────────────────────
+
+/** Número para frase, com vírgula decimal: 28,8; 4; 3,6. */
+const comVirgula = (v: number, casas = 1): string => String(Number(v.toFixed(casas))).replace('.', ',').replace('-', '−');
+const emKmH = (ms: number): number => ms * 3.6;
+
+function laboratorioDaLombada(raiz: HTMLElement, aoCalcular: AoCalcular): Desmontar {
+  raiz.innerHTML = `
+    <div class="lab-grade">
+      <div class="lab-telas">
+        <div class="lab-tela lab-estrada"><canvas role="img" aria-label="Estrada vista de lado, com o carro, o ponto em que o freio entra e a lombada 62 m à frente"></canvas></div>
+        <div class="lab-tela lab-velocidade"><canvas role="img" aria-label="Velocidade do carro no tempo; a área debaixo dela é a distância andada, e a linha tracejada marca 30 km/h"></canvas></div>
+      </div>
+      <div class="lab-painel">
+        <p class="lab-forma" data-campo="lei"></p>
+        <label class="controle"><span class="controle-nome">Tempo de reação: <output data-campo="reacao"></output></span><input type="range" data-controle="reacao" min="0.5" max="2" step="0.1" value="${CARRO.reacao}" aria-label="Tempo de reação, em segundos" /></label>
+        <label class="controle"><span class="controle-nome">Freada: <output data-campo="freada"></output></span><input type="range" data-controle="freada" min="2" max="7" step="0.5" value="${CARRO.freada}" aria-label="Freada: quantos m/s o carro perde a cada segundo" /></label>
+        <div class="lab-linha"><button type="button" class="lab-tocar"></button></div>
+        <dl class="ficha lab-ficha">
+          <div><dt>Velocidade na lombada</dt><dd data-campo="chegada"></dd></div>
+          <div><dt>Instante da chegada</dt><dd data-campo="instante"></dd></div>
+          <div><dt>Reação + frenagem</dt><dd data-campo="distancias"></dd></div>
+        </dl>
+        <p class="lab-nota" data-campo="veredito" aria-live="polite"></p>
+        ${BOTAO_CALCULAR}
+      </div>
+    </div>`;
+  const campo = (nome: string): HTMLElement => achar<HTMLElement>(raiz, `[data-campo="${nome}"]`);
+  const controleReacao = achar<HTMLInputElement>(raiz, '[data-controle="reacao"]');
+  const controleFreada = achar<HTMLInputElement>(raiz, '[data-controle="freada"]');
+  const limite = CARRO.limiteKmH / 3.6;
+  let chegada = chegadaNaLombada(CARRO.reacao, CARRO.freada);
+  /** O instante desenhado: 0 até o ▶, e o carro anda até a chegada. */
+  let agora = 0;
+  const estrada = new Plano(achar<HTMLCanvasElement>(raiz, '.lab-estrada canvas'), [-6, 70, -1, 3], () => desenharEstrada());
+  const grafico = new Plano(achar<HTMLCanvasElement>(raiz, '.lab-velocidade canvas'), [-0.4, 5, -2.5, 25], () => desenharGrafico());
+
+  function desenharEstrada(): void {
+    if (!estrada.limpar()) return;
+    const { ctx, cor } = estrada;
+    const chao = estrada.py(0);
+    estrada.segmentoPx(0, chao, estrada.largura, chao, 'rgba(226, 232, 240, 0.55)', 2, false);
+    // a lombada começa nos 62 m; o rótulo dela cabe inteiro na tela, e as marcas que encostariam nele ficam sem número
+    const [ini, fim] = [estrada.px(CARRO.distancia), estrada.px(CARRO.distancia + 3.7)];
+    const rotulo = 'lombada · 62 m';
+    ctx.save();
+    ctx.font = `700 11px ${FONTE}`;
+    const meia = ctx.measureText(rotulo).width / 2;
+    ctx.restore();
+    const centro = Math.min((ini + fim) / 2, estrada.largura - 4 - meia);
+    const passo = estrada.largura < 520 ? 20 : 10;
+    for (let d = 0; d <= 60; d += 10) {
+      const x = estrada.px(d);
+      estrada.segmentoPx(x, chao, x, chao + 5, 'rgba(203, 213, 225, 0.6)', 1, false);
+      if (d % passo === 0 && x + 18 < centro - meia) estrada.texto(`${d} m`, x, chao + 16, 'rgba(203, 213, 225, 0.75)', 'center', 10);
+    }
+    ctx.save();
+    ctx.fillStyle = cor.amarelo;
+    ctx.beginPath();
+    ctx.moveTo(ini, chao);
+    ctx.quadraticCurveTo((ini + fim) / 2, chao - 22, fim, chao);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    estrada.texto(rotulo, centro, chao + 16, '#fde68a', 'center', 11);
+    // onde o freio entra
+    const freia = estrada.px(chegada.reacaoM);
+    estrada.segmentoPx(freia, chao - 50, freia, chao, cor.segunda, 1.4, true);
+    estrada.texto('freia', freia + 4, chao - 52, cor.segunda, 'left', 11);
+    // o carro, com a frente na posição s(t)
+    const frente = estrada.px(posicaoNoInstante(chegada, agora));
+    ctx.save();
+    ctx.fillStyle = cor.f;
+    ctx.fillRect(frente - 40, chao - 24, 40, 14);
+    ctx.fillRect(frente - 31, chao - 34, 20, 11);
+    ctx.fillStyle = '#0f172a';
+    ctx.strokeStyle = '#e2e8f0';
+    ctx.lineWidth = 2;
+    for (const roda of [frente - 31, frente - 9]) {
+      ctx.beginPath();
+      ctx.arc(roda, chao - 7, 6, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+    estrada.texto(`${comVirgula(emKmH(velocidadeNoInstante(chegada, agora)))} km/h`, frente - 20, chao - 42, '#e2e8f0', 'center', 11);
+  }
+
+  function desenharGrafico(): void {
+    if (!grafico.limpar()) return;
+    const { ctx, cor } = grafico;
+    grafico.grade();
+    // a área debaixo da velocidade, de 0 até o instante desenhado: a distância andada até ali
+    const ate = Math.min(agora, chegada.tempo);
+    ctx.save();
+    ctx.fillStyle = cor.positiva;
+    ctx.beginPath();
+    ctx.moveTo(grafico.px(0), grafico.py(0));
+    for (let i = 0; i <= 160; i++) {
+      const t = (ate * i) / 160;
+      ctx.lineTo(grafico.px(t), grafico.py(velocidadeNoInstante(chegada, t)));
+    }
+    ctx.lineTo(grafico.px(ate), grafico.py(0));
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    grafico.curva((t) => (t >= 0 && t <= chegada.tempo ? velocidadeNoInstante(chegada, t) : Number.NaN), cor.f);
+    grafico.segmento(0, limite, grafico.x1, limite, cor.erro, 1.4, true);
+    grafico.texto('30 km/h', grafico.largura - 8, grafico.py(limite) - 7, cor.erro, 'right', 11);
+    grafico.segmento(chegada.reacao, 0, chegada.reacao, CARRO.velocidade, cor.segunda, 1.2, true);
+    const passou = !chegada.parou && chegada.velocidade <= limite + 1e-9;
+    grafico.ponto(chegada.tempo, chegada.velocidade, chegada.parou ? cor.amarelo : passou ? cor.tangente : cor.erro);
+    if (agora > 0 && agora < chegada.tempo) grafico.ponto(agora, velocidadeNoInstante(chegada, agora), '#e2e8f0', 4);
+    grafico.texto('v (m/s)', grafico.colunaY + 30, 14, 'rgba(203, 213, 225, 0.85)', 'left', 11);
+    grafico.texto('t (s)', grafico.largura - 8, grafico.linhaX - 8, 'rgba(203, 213, 225, 0.85)', 'right', 11);
+  }
+
+  const desenhar = (): void => {
+    desenharEstrada();
+    desenharGrafico();
+  };
+
+  function atualizar(): void {
+    const [reacao, freada] = [controleReacao.valueAsNumber, controleFreada.valueAsNumber];
+    chegada = chegadaNaLombada(reacao, freada);
+    agora = 0;
+    grafico.janela([-0.4, Math.max(5, Math.ceil(chegada.tempo) + 0.5), -2.5, 25]);
+    campo('reacao').textContent = `${comVirgula(reacao)} s`;
+    campo('freada').textContent = `${comVirgula(freada)} m/s²`;
+    campo('lei').innerHTML = `Depois do freio: ${formula(`v(t) = 20 - ${comVirgula(freada)}(t - ${comVirgula(reacao)})`)}`;
+    const kmh = emKmH(chegada.velocidade);
+    campo('chegada').textContent = chegada.parou ? 'não chega: parou antes' : `${comVirgula(kmh)} km/h (${comVirgula(chegada.velocidade)} m/s)`;
+    campo('instante').textContent = `${chegada.parou ? 'para em ' : ''}t = ${comVirgula(chegada.tempo)} s`;
+    campo('distancias').textContent = `${comVirgula(chegada.reacaoM)} m + ${comVirgula(chegada.frenagemM)} m`;
+    const nota = campo('veredito');
+    nota.classList.remove('ok', 'erro');
+    if (chegada.parou) {
+      const antes = CARRO.distancia - chegada.reacaoM - chegada.frenagemM;
+      nota.textContent =
+        antes < 0.05
+          ? 'Parou bem em cima da lombada: freou mais do que precisava para passar a 30 km/h.'
+          : `Freou forte demais: parou ${comVirgula(antes)} m antes da lombada.`;
+    } else if (kmh <= CARRO.limiteKmH + 1e-9) {
+      nota.textContent = `Passa a ${comVirgula(kmh)} km/h, dentro dos 30 km/h da lombada.`;
+      nota.classList.add('ok');
+    } else {
+      nota.textContent = `Chega a ${comVirgula(kmh)} km/h: rápido demais para a lombada.`;
+      nota.classList.add('erro');
+    }
+    animacao.parar();
+    desenhar();
+  }
+
+  const animacao = tocador(
+    achar<HTMLButtonElement>(raiz, '.lab-tocar'),
+    { tocar: '▶ Ver o carro andar', pausar: '⏸ Pausar', denovo: '↺ De novo' },
+    (() => {
+      let ultimoInicio = -1;
+      let base = 0;
+      return (relogio: number, inicio: number): boolean => {
+        if (inicio !== ultimoInicio) {
+          ultimoInicio = inicio;
+          if (agora >= chegada.tempo) agora = 0;
+          base = agora;
+        }
+        // em tempo real, pelo relógio: 4 s de movimento levam 4 s na tela
+        agora = Math.min(chegada.tempo, base + (relogio - inicio) / 1000);
+        desenhar();
+        return agora < chegada.tempo;
+      };
+    })(),
+    () => {
+      agora = chegada.tempo;
+      desenhar();
+    },
+    () => agora >= chegada.tempo,
+  );
+
+  for (const controle of [controleReacao, controleFreada]) controle.addEventListener('input', atualizar);
+  achar<HTMLButtonElement>(raiz, '[data-calcular]').addEventListener('click', () => aoCalcular(contaDaFrenagem(chegada)));
+  atualizar();
+  return () => {
+    animacao.parar();
+    estrada.desmontar();
+    grafico.desmontar();
+  };
+}
+
 /** Monta o laboratório pedido em `raiz` (data-lab no HTML da aula). */
 export function montarLaboratorio(tipo: string | undefined, raiz: HTMLElement, aoCalcular: AoCalcular): Desmontar {
   try {
@@ -1327,6 +1529,8 @@ export function montarLaboratorio(tipo: string | undefined, raiz: HTMLElement, a
         return laboratorioDeDerivadas(raiz, aoCalcular);
       case 'integrais':
         return laboratorioDeIntegrais(raiz, aoCalcular);
+      case 'lombada':
+        return laboratorioDaLombada(raiz, aoCalcular);
       default:
         return () => undefined;
     }

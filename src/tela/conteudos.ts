@@ -21,7 +21,7 @@ import { escapar, formulaHTML, integralHTML } from './formula';
 
 export type IdAula = 'funcoes' | 'limites' | 'derivadas' | 'integrais';
 export type ModoDaConta = 'funcao' | 'limite' | 'derivada' | 'integral' | 'definida';
-export type TipoDeLaboratorio = 'funcoes' | 'circulo' | 'limites' | 'derivadas' | 'integrais';
+export type TipoDeLaboratorio = 'funcoes' | 'circulo' | 'limites' | 'derivadas' | 'integrais' | 'lombada';
 /** Trecho do plano: x de x0 a x1, y de y0 a y1. */
 export type Janela = [number, number, number, number];
 
@@ -917,44 +917,44 @@ const integrais: Aula = {
 
 export const AULAS: Aula[] = [funcoes, limites, derivadas, integrais];
 
-// ─── O carro que atravessa as quatro aulas ─────────────────────────────────────
+// ─── O carro que chega na lombada, nas quatro aulas ────────────────────────────
 
 const HISTORIA: { aula: IdAula; numero: number; titulo: string; texto: string; botao: string }[] = [
   {
     aula: 'funcoes',
     numero: 1,
     titulo: 'Funções',
-    texto: `A posição é ${m('s(t) = 20t - 2t^2')}, uma quadrática com ${m('a < 0')}. O vértice ${m('(5, 50)')} diz que o carro para depois de 5 s, a 50 m de onde começou a frear.`,
-    botao: calcular({ modo: 'funcao', f: '20*x - 2*x^2', resposta: 'quadrática', imagem: '(−∞, 50]', vertice: [5, 50] }),
+    texto: `Durante a reação, a posição é afim: ${m('s(t) = 20t')}. Depois que o freio entra, é quadrática: ${m('s(t) = -2t^2 + 24t - 2')}, com ${m('a < 0')}. O carro chega à lombada, em ${m('s = 62')} m, no instante ${m('t = 4')} s. O vértice ${m('(6, 70)')} mostra que, sem soltar o freio, ele pararia 8 m depois dela.`,
+    botao: calcular({ modo: 'funcao', f: '-2*x^2 + 24*x - 2', resposta: 'quadrática', imagem: '(−∞, 70]', vertice: [6, 70] }),
   },
   {
     aula: 'limites',
     numero: 2,
     titulo: 'Limites',
-    texto: `A velocidade média nos primeiros ${m('h')} segundos é ${m('#f{s(h) - s(0)}{h} = 20 - 2h')}. Quando ${m('h → 0')}, ela tende a 20 m/s: a velocidade no instante em que o freio entra.`,
-    botao: calcular({ modo: 'limite', f: '(20*x - 2*x^2)/x', ponto: '0', resposta: '20' }),
+    texto: `Em ${m('t = 1')} s o pé sai do acelerador e vai para o freio. Dos dois lados, a velocidade chega a 20 m/s: ela é contínua aí. A aceleração não: vale 0 antes e −4 m/s² depois. Os limites laterais são diferentes, uma descontinuidade de salto.`,
+    botao: calcular({ modo: 'limite', f: 'x < 1 ? 0 : -4', ponto: '1', resposta: 'não existe', descontinuidade: 'salto' }),
   },
   {
     aula: 'derivadas',
     numero: 3,
     titulo: 'Derivadas',
-    texto: `A velocidade é a derivada da posição, ${m("v(t) = s'(t) = 20 - 4t")}, e a aceleração é ${m("v'(t) = -4")} m/s². ${m('v(t) = 0')} em ${m('t = 5')}: o mesmo instante do vértice.`,
-    botao: calcular({ modo: 'derivada', f: '20*x - 2*x^2', resposta: '20 - 4*x' }),
+    texto: `A velocidade é a derivada da posição: na frenagem, ${m("v(t) = s'(t) = 24 - 4t")}, e a aceleração é ${m("v'(t) = -4")} m/s². Na lombada, ${m('v(4) = 8')} m/s, ou 28,8 km/h: dentro dos 30 km/h. Em ${m('t = 1')} o gráfico da velocidade faz uma quina (as derivadas laterais são 0 e −4), e ali ela não tem derivada.`,
+    botao: calcular({ modo: 'derivada', f: '-2*x^2 + 24*x - 2', resposta: '24 - 4*x' }),
   },
   {
     aula: 'integrais',
     numero: 4,
     titulo: 'Integrais',
-    texto: `A distância é a área sob a velocidade: ${m('#int{0}{5} (20 - 4t) #dt = [20t - 2t^2]_0^5 = 50')} m. É o mesmo 50 do vértice: integrar desfaz derivar.`,
-    botao: calcular({ modo: 'definida', f: '20 - 4*x', a: '0', b: '5', resposta: '50' }),
+    texto: `A distância é a área sob a velocidade: ${m('#int{0}{1} 20 #dt + #int{1}{4} (24 - 4t) #dt = 20 + 42 = 62')} m, exatamente onde está a lombada. Só a reação gasta 20 m: com 1,5 s de reação, sobrariam 32 m para frear, e o carro chegaria a 43,2 km/h.`,
+    botao: calcular({ modo: 'definida', f: '24 - 4*x', a: '1', b: '4', resposta: '42' }),
   },
 ];
 
-/** O exemplo do carro freando nas quatro aulas, com a aula aberta em destaque. */
+/** O carro chegando na lombada nas quatro aulas, com a aula aberta em destaque, e o laboratório dele. */
 export function historiaDoCarro(atual: IdAula): string {
   return `<section class="historia" aria-labelledby="historia-${atual}">
-    <h3 id="historia-${atual}"><span aria-hidden="true">🚗</span> Um carro freando, nas quatro aulas</h3>
-    <p class="historia-intro">Um carro a 20 m/s começa a frear e perde 4 m/s a cada segundo. O mesmo problema atravessa as quatro aulas. Na calculadora, o tempo ${m('t')} é digitado como ${m('x')}.</p>
+    <h3 id="historia-${atual}"><span aria-hidden="true">🚗</span> Um carro chegando na lombada, nas quatro aulas</h3>
+    <p class="historia-intro">Um carro vem a 20 m/s (72 km/h). No instante ${m('t = 0')}, o motorista vê uma lombada 62 m à frente, que pede no máximo 30 km/h. Ele leva 1 s para reagir e então freia, perdendo 4 m/s a cada segundo, até chegar à lombada. O mesmo problema atravessa as quatro aulas. Na calculadora, o tempo ${m('t')} é digitado como ${m('x')}.</p>
     <ol class="historia-passos">${HISTORIA.map(
       (p) => `<li${p.aula === atual ? ' class="atual" aria-current="step"' : ''}>
         <a class="historia-aula" href="#${p.aula}">Aula ${p.numero} · ${p.titulo}</a>
@@ -962,6 +962,9 @@ export function historiaDoCarro(atual: IdAula): string {
         ${p.botao}
       </li>`,
     ).join('')}</ol>
+    <h4 class="historia-lab">Laboratório: o motorista e a lombada</h4>
+    <p class="historia-intro">Mude o tempo de reação e a força da freada e veja com que velocidade o carro chega. A área azul debaixo da velocidade é a distância andada.</p>
+    <div class="lab lab-lombada" data-lab="lombada"></div>
   </section>`;
 }
 
@@ -1165,7 +1168,8 @@ export const LAB_LIMITES: CasoDoLimite[] = [
   { rotulo: 'Salto', f: 'abs(x)/x', ponto: '0', a: 0, hMax: 1.5, janela: [-3, 3, -2.2, 2.2] },
   { rotulo: 'Infinito', f: '1/x^2', ponto: '0', a: 0, hMax: 1.5, janela: [-3, 3, -1, 12] },
   { rotulo: 'Oscila', f: 'sen(1/x)', ponto: '0', a: 0, hMax: 0.5, janela: [-0.6, 0.6, -1.7, 1.7] },
-  { rotulo: '🚗 Velocidade média', f: '(20*x - 2*x^2)/x', ponto: '0', a: 0, hMax: 1.8, janela: [-2, 6, -2, 28] },
+  // a velocidade média nos h segundos depois de o freio entrar: [s(1 + h) − s(1)]/h, com h no lugar de x
+  { rotulo: '🚗 Velocidade ao frear', f: '(20*x - 2*x^2)/x', ponto: '0', a: 0, hMax: 1.8, janela: [-2, 6, -2, 28] },
 ];
 
 export interface CasoDaDerivada {
@@ -1184,7 +1188,7 @@ export const LAB_DERIVADAS: CasoDaDerivada[] = [
   { rotulo: 'x³ − 3x', f: 'x^3 - 3*x', x0: -0.5, faixa: [-2.2, 2.2], hMax: 1.5, janela: [-2.6, 2.6, -4.5, 4.5] },
   { rotulo: 'sen x', f: 'sen(x)', x0: 1, faixa: [-6, 6], hMax: 2, janela: [-2 * Math.PI, 2 * Math.PI, -2, 2], pi: true },
   { rotulo: 'eˣ', f: 'e^x', x0: 0.5, faixa: [-2.5, 1.8], hMax: 1.5, janela: [-3, 2.5, -1.5, 9] },
-  { rotulo: '🚗 Posição s(t)', f: '20*x - 2*x^2', x0: 2, faixa: [0, 9], hMax: 3, janela: [-0.5, 10.5, -8, 62] },
+  { rotulo: '🚗 Posição s(t)', f: '-2*x^2 + 24*x - 2', x0: 2, faixa: [1, 4], hMax: 1.5, janela: [0, 7, -6, 78] },
 ];
 
 /**
@@ -1213,5 +1217,77 @@ export const LAB_INTEGRAIS: CasoDaIntegral[] = [
   { rotulo: 'sen x de 0 a π', f: 'sen(x)', a: '0', b: 'pi', janela: [-0.4, 3.6, -0.4, 1.4], pi: true },
   { rotulo: 'sen x de 0 a 2π', f: 'sen(x)', a: '0', b: '2*pi', janela: [-0.5, 6.8, -1.4, 1.4], pi: true },
   { rotulo: 'eˣ de 0 a 1', f: 'e^x', a: '0', b: '1', janela: [-0.3, 1.3, -0.3, 3.1] },
-  { rotulo: '🚗 v(t) de 0 a 5', f: '20 - 4*x', a: '0', b: '5', janela: [-0.5, 5.8, -3, 24] },
+  { rotulo: '🚗 v(t) de 1 a 4', f: '24 - 4*x', a: '1', b: '4', janela: [0.4, 4.6, -2, 24] },
 ];
+
+// ─── O carro e a lombada: o movimento do laboratório ──────────────────────────
+
+/** O carro da história: 20 m/s (72 km/h), lombada a 62 m, 1 s de reação, freada de 4 m/s², no máximo 30 km/h na lombada. */
+export const CARRO = { velocidade: 20, distancia: 62, reacao: 1, freada: 4, limiteKmH: 30 } as const;
+
+/** Como o carro chega à lombada, para um tempo de reação e uma freada. Distâncias em m, tempos em s, velocidades em m/s. */
+export interface ChegadaNaLombada {
+  reacao: number;
+  freada: number;
+  /** Quando chega à lombada; se parar antes, quando para. */
+  tempo: number;
+  /** Velocidade na lombada (0 se parou antes). */
+  velocidade: number;
+  /** Metros andados durante a reação e durante a frenagem. */
+  reacaoM: number;
+  frenagemM: number;
+  /** Freou tanto que parou antes da lombada. */
+  parou: boolean;
+}
+
+/**
+ * O movimento da história: v(t) = 20 até t = r e v(t) = 20 − a·(t − r) depois. A distância é a
+ * integral da velocidade; igualando a 62 m sai v² = 20² − 2a·(62 − 20r) na chegada. Se esse
+ * número for negativo, a velocidade zera antes: o carro para antes da lombada.
+ */
+export function chegadaNaLombada(reacao: number, freada: number): ChegadaNaLombada {
+  const { velocidade: v0, distancia } = CARRO;
+  const reacaoM = v0 * reacao;
+  const sobra = distancia - reacaoM;
+  if (sobra <= 0) return { reacao, freada, tempo: distancia / v0, velocidade: v0, reacaoM: distancia, frenagemM: 0, parou: false };
+  const quadrado = v0 * v0 - 2 * freada * sobra;
+  if (quadrado > 0) {
+    const v = Math.sqrt(quadrado);
+    return { reacao, freada, tempo: reacao + (v0 - v) / freada, velocidade: v, reacaoM, frenagemM: sobra, parou: false };
+  }
+  return { reacao, freada, tempo: reacao + v0 / freada, velocidade: 0, reacaoM, frenagemM: (v0 * v0) / (2 * freada), parou: true };
+}
+
+/** Velocidade no instante t, até a chegada (depois dela, o laboratório não desenha). */
+export function velocidadeNoInstante(c: ChegadaNaLombada, t: number): number {
+  return t <= c.reacao ? CARRO.velocidade : Math.max(0, CARRO.velocidade - c.freada * (t - c.reacao));
+}
+
+/** Posição no instante t, em metros desde onde o motorista viu a lombada: a integral da velocidade de 0 a t. */
+export function posicaoNoInstante(c: ChegadaNaLombada, t: number): number {
+  const v0 = CARRO.velocidade;
+  if (t <= c.reacao) return v0 * Math.min(t, c.tempo);
+  const u = Math.min(t, c.tempo) - c.reacao;
+  return c.reacaoM + v0 * u - (c.freada * u * u) / 2;
+}
+
+/** Número curto para a calculadora: 25.2, e não 25.200000000000003. */
+const paraConta = (v: number): string => String(Number(v.toFixed(6)));
+
+/**
+ * A frenagem como conta da calculadora: a integral da velocidade 20 + a·r − a·t, de t = r até a
+ * chegada, que dá os metros andados freando. A chegada vai exata: como número quando é curto,
+ * senão como expressão (1 + (20 − √148)/3), que a calculadora lê.
+ */
+export function contaDaFrenagem(c: ChegadaNaLombada): Conta {
+  const v0 = CARRO.velocidade;
+  const f = `${paraConta(v0 + c.freada * c.reacao)} - ${paraConta(c.freada)}*x`;
+  const curto = Math.abs(c.tempo * 1000 - Math.round(c.tempo * 1000)) < 1e-6;
+  const quadrado = v0 * v0 - 2 * c.freada * (CARRO.distancia - c.reacaoM);
+  const fim = curto
+    ? paraConta(c.tempo)
+    : c.parou
+      ? `${paraConta(c.reacao)} + ${v0}/${paraConta(c.freada)}`
+      : `${paraConta(c.reacao)} + (${v0} - sqrt(${paraConta(quadrado)}))/${paraConta(c.freada)}`;
+  return { modo: 'definida', f, a: paraConta(c.reacao), b: fim, resposta: String(Number(c.frenagemM.toPrecision(15))) };
+}
