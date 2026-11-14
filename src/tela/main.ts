@@ -6,20 +6,22 @@
 import { derivar } from '../motor/derivadas';
 import type { Regra } from '../motor/derivadas';
 import { integralDefinida } from '../motor/definidas';
-import { numeroBonito } from '../motor/numeros';
 import type { ResultadoIntegralDefinida } from '../motor/definidas';
 import { ErroDeEntrada, avaliar, contem, derivada, lerExpressao, paraTexto } from '../motor/expressao';
 import type { Expr } from '../motor/expressao';
+import { analisarFuncao, calcularEm, igualdadeDaAnalise, numeroDaAnalise, pertence, tabelaDeValores as tabelaDaFuncao } from '../motor/funcoes';
+import type { AnaliseFuncao, AspectoFuncao, TipoFuncao } from '../motor/funcoes';
 import { integrar } from '../motor/integrais';
 import type { PassoIntegral, RegraIntegral } from '../motor/integrais';
 import { avaliarFuncao, calcularLimite, lerFuncaoDoLimite } from '../motor/limites';
 import type { FuncaoDoLimite, PassoLimite, ResultadoLimite, TecnicaLimite, ValorLimite } from '../motor/limites';
+import { numeroBonito, numeroParaLer } from '../motor/numeros';
 import { escapar, formulaHTML, integralHTML, temPendencia } from './formula';
 import { Grafico, curto, somaDeRiemann } from './grafico';
-import type { Cena, Funcao } from './grafico';
+import type { Cena, Funcao, PontoDoGrafico } from './grafico';
 
-type Modo = 'limite' | 'derivada' | 'integral' | 'definida';
-type Etiqueta = Regra | RegraIntegral | TecnicaLimite | 'primitiva' | 'tfc' | 'módulo' | 'descontinuidade';
+type Modo = 'funcao' | 'limite' | 'derivada' | 'integral' | 'definida';
+type Etiqueta = Regra | RegraIntegral | TecnicaLimite | TipoFuncao | AspectoFuncao | 'primitiva' | 'tfc' | 'módulo' | 'descontinuidade';
 
 interface ItemPasso {
   etiqueta: Etiqueta;
@@ -38,10 +40,96 @@ interface Exemplo {
   contexto?: string;
   /** O que o resultado quer dizer nesse problema. */
   leitura?: string;
+  /** Modo Função: o trecho de x do gráfico, as entradas da tabela e o x da conta de exemplo. */
+  janela?: [number, number];
+  entradas?: number[];
+  avaliar?: string;
 }
 
-/** Exemplos tirados dos slides das Aulas 2, 3 e 4, e o cenário do veículo. */
+/** Exemplos tirados dos slides das Aulas 1 a 4, e o cenário do veículo. */
 const EXEMPLOS: Record<Modo, Exemplo[]> = {
+  funcao: [
+    { f: 'x^2 - 4*x - 5' },
+    { f: 'tg(x)' },
+    {
+      f: '20',
+      rotulo: '🚗 piloto automático',
+      contexto: 'Com o piloto automático ligado, a velocidade do carro fica em 20 m/s (72 km/h), qualquer que seja o instante x, em segundos.',
+      leitura:
+        'A velocidade não depende do tempo: em qualquer instante, a saída é 20. Por isso a imagem é só {20} e o gráfico é uma reta horizontal na altura 20.',
+      janela: [-1, 10],
+      entradas: [0, 1, 2, 5, 10],
+      avaliar: '7',
+    },
+    {
+      f: '20*x',
+      rotulo: '🚗 distância',
+      contexto: 'Distância percorrida pelo carro, em metros, x segundos depois de passar pelo marco zero, a 20 m/s.',
+      leitura:
+        'A distância é proporcional ao tempo: em 2 s o carro anda 40 m; em 4 s, o dobro, 80 m. A taxa a = 20 é a própria velocidade. No problema, só faz sentido x ≥ 0.',
+      janela: [-1, 10],
+      entradas: [0, 1, 2, 3, 4, 5],
+      avaliar: '4',
+    },
+    {
+      f: '20*x + 100',
+      rotulo: '🚗 posição',
+      contexto: 'Posição do carro na estrada, em metros a partir do posto: no instante 0 ele está no marco de 100 m e anda a 20 m/s.',
+      leitura:
+        'b = 100 é a posição no instante 0 (onde a reta corta o eixo y) e a = 20 é a velocidade: a cada segundo, a posição aumenta 20 m. A raiz x = −5 é o instante em que o carro passou pelo posto, 5 s antes de começarmos a contar.',
+      janela: [-7, 10],
+      entradas: [-5, 0, 1, 2, 5, 10],
+      avaliar: '5',
+    },
+    {
+      f: '20*x - 2*x^2',
+      rotulo: '🚗 frenagem',
+      contexto: 'Posição do carro, em metros, desde o instante em que o motorista pisa no freio: ele vinha a 20 m/s e perde 4 m/s a cada segundo.',
+      leitura:
+        'O vértice (5, 50) é onde o carro para: depois de 5 s de frenagem, ele percorreu 50 m, e a imagem (−∞, 50] diz que ele nunca passa dos 50 m. A fórmula só vale até o carro parar, de x = 0 a x = 5.',
+      janela: [-1, 11],
+      entradas: [0, 1, 2, 3, 4, 5],
+      avaliar: '5',
+    },
+    {
+      f: 'abs(20*x - 100)',
+      rotulo: '🚗 radar',
+      contexto: 'Distância, em metros, entre o carro e um radar que fica 100 m à frente do ponto de partida; o carro anda a 20 m/s.',
+      leitura:
+        'Distância nunca é negativa: a imagem é [0, +∞). O bico do gráfico, em x = 5, é o instante em que o carro passa pelo radar (distância zero); antes ele se aproxima, depois se afasta.',
+      janela: [-1, 10],
+      entradas: [0, 2, 4, 5, 6, 8, 10],
+      avaliar: '5',
+    },
+    {
+      f: '80*0.85^x',
+      rotulo: '🚗 desvalorização',
+      contexto: 'Valor do carro, em mil reais, x anos depois de comprado por R$ 80 mil, perdendo 15% do valor a cada ano.',
+      leitura:
+        'A cada ano, o valor é multiplicado por 0.85. Ele cai sempre, mas nunca chega a zero: a reta y = 0 é assíntota, e a imagem é (0, +∞). Em 5 anos, o carro vale cerca de R$ 35 mil. No problema, só faz sentido x ≥ 0.',
+      janela: [-1, 15],
+      entradas: [0, 1, 2, 5, 10],
+      avaliar: '5',
+    },
+    {
+      f: 'log(x/80, 0.85)',
+      rotulo: '🚗 tempo de uso',
+      contexto: 'Quantos anos levam até o carro, comprado por R$ 80 mil e perdendo 15% ao ano, valer x mil reais.',
+      leitura:
+        'É a inversa da desvalorização: para valer R$ 40 mil, metade do preço, passam uns 4 anos e 3 meses. O domínio é x > 0 (valor de carro é positivo) e a função é decrescente: quanto menor o valor, mais anos de uso.',
+      janela: [-5, 100],
+      entradas: [80, 68, 57.8, 40, 20],
+      avaliar: '40',
+    },
+    {
+      f: '0.3 - 0.3*cos(x)',
+      rotulo: '🚗 roda',
+      contexto: 'Altura, em metros, da válvula do pneu depois de a roda girar x radianos. A roda tem raio de 30 cm, e a válvula começa encostada no chão.',
+      leitura:
+        'A altura vai de 0 (no chão) a 0.6 m (60 cm, no alto da roda): a imagem é [0, 0.6]. A cada volta completa, x aumenta 2π e a altura se repete: o período é 2π.',
+      avaliar: 'pi',
+    },
+  ],
   limite: [
     { f: '(x^2 - 4)/(x - 2)', ponto: '2' },
     { f: '(sqrt(x + 1) - 1)/x', ponto: '0' },
@@ -124,6 +212,31 @@ const ETIQUETAS: Record<Etiqueta, { nome: string; cor: string }> = {
   'limite no infinito': { nome: 'Limite no infinito', cor: '#60a5fa' },
   'limites laterais': { nome: 'Limites laterais', cor: '#38bdf8' },
   continuidade: { nome: 'Continuidade', cor: '#facc15' },
+  linear: { nome: 'Linear', cor: '#60a5fa' },
+  afim: { nome: 'Afim', cor: '#38bdf8' },
+  quadrática: { nome: 'Quadrática', cor: '#a78bfa' },
+  modular: { nome: 'Modular', cor: '#2dd4bf' },
+  logarítmica: { nome: 'Logarítmica', cor: '#fb923c' },
+  tipo: { nome: 'Tipo', cor: '#c4b5fd' },
+  domínio: { nome: 'Domínio', cor: '#34d399' },
+  imagem: { nome: 'Imagem', cor: '#c084fc' },
+  raízes: { nome: 'Raízes', cor: '#f472b6' },
+  vértice: { nome: 'Vértice', cor: '#facc15' },
+  concavidade: { nome: 'Concavidade', cor: '#a78bfa' },
+  crescimento: { nome: 'Crescimento', cor: '#4ade80' },
+  assíntota: { nome: 'Assíntota', cor: '#fb7185' },
+  período: { nome: 'Período', cor: '#22d3ee' },
+  paridade: { nome: 'Paridade', cor: '#60a5fa' },
+  'corte no eixo y': { nome: 'Corte no eixo y', cor: '#a3e635' },
+};
+
+/** O que o campo sugere em cada modo. */
+const SUGESTAO: Record<Modo, string> = {
+  funcao: 'por exemplo, x^2 - 4*x - 5',
+  limite: 'por exemplo, (x^2 - 4)/(x - 2)',
+  derivada: 'por exemplo, x^2*sen(x)',
+  integral: 'por exemplo, 2*x*cos(x^2)',
+  definida: 'por exemplo, sen(x)',
 };
 
 const TRIGONOMETRICAS = new Set(['sen', 'cos', 'tg', 'cotg', 'sec', 'csc']);
@@ -186,8 +299,8 @@ const avaliador =
   (x) =>
     avaliar(e, { x });
 
-/** π no lugar de pi, sem o * e com o sinal de menos tipográfico. */
-const bonito = (v: number): string => numeroBonito(v).replace(/\*/g, '').replace(/pi/g, 'π').replace(/-/g, '−');
+/** O número como na aula: 1/2, √3/2, 2π/3, com o sinal de menos tipográfico. */
+const bonito = numeroParaLer;
 
 /**
  * Gráfico em múltiplos de π quando há seno, cosseno etc. e todos com argumento linear
@@ -486,6 +599,156 @@ function mostrarDefinida(texto: string): void {
   );
 }
 
+// ─── Funções (Aula 1) ──────────────────────────────────────────────────────────
+
+/**
+ * Confere a análise pela própria função, em 601 entradas da janela: as do domínio têm saída
+ * dentro da imagem, as de fora não têm saída, e f zera nas raízes.
+ */
+function conferirFuncao(a: AnaliseFuncao, [x0, x1]: [number, number]): string {
+  const f = avaliador(a.entrada);
+  let dentro = 0;
+  let fora = 0;
+  let falhas = 0;
+  for (let i = 0; i <= 600; i++) {
+    const t = x0 + ((x1 - x0) * i) / 600 + 1e-7;
+    const y = f(t);
+    if (pertence(a.dominio, t)) {
+      dentro++;
+      if (!pertence(a.imagem, y, 1e-9)) falhas++;
+    } else {
+      fora++;
+      if (!Number.isNaN(y)) falhas++;
+    }
+  }
+  if (falhas > 0 || !a.raizes.valores.every((r) => Math.abs(f(r)) < 1e-9)) {
+    return 'Atenção: em alguma entrada do gráfico, a função não bateu com o domínio, a imagem ou as raízes.';
+  }
+  const raizes = a.raizes.valores.length === 0 ? '' : `, e f vale 0 ${a.raizes.valores.length === 1 ? 'na raiz' : 'nas raízes'}`;
+  const semSaida = fora > 0 ? `, as ${fora} de fora não têm saída` : '';
+  return `✓ Conferido em ${dentro + fora} entradas do gráfico: as ${dentro} do domínio deram saídas dentro de Im(f) = ${a.imagem.texto}${semSaida}${raizes}.`;
+}
+
+/** A tabela de entradas e saídas, deitada: x em cima, f(x) embaixo. */
+function tabelaDeEntradas(a: AnaliseFuncao, entradas?: number[]): string {
+  const linhas = tabelaDaFuncao(a, entradas);
+  const xs = linhas.map((l) => `<td>${escapar(numeroDaAnalise(a, l.x))}</td>`).join('');
+  const ys = linhas
+    .map((l) => (l.y === null ? '<td class="fora" title="fora do domínio">∄</td>' : `<td>${escapar(numeroDaAnalise(a, l.y))}</td>`))
+    .join('');
+  return `<div class="entradas-saidas"><table class="tabela tabela-deitada"><caption>Entradas e saídas</caption><tbody><tr><th scope="row">${X}</th>${xs}</tr><tr><th scope="row">f(${X})</th>${ys}</tr></tbody></table></div>`;
+}
+
+/** A entrada da conta de exemplo: um valor do meio da tabela (na trigonométrica, π/3). */
+function sugestaoDeEntrada(a: AnaliseFuncao): string {
+  const indice = a.tipo === 'trigonométrica' ? 3 : Math.ceil(a.entradas.length / 2);
+  return numeroBonito(a.entradas[Math.min(indice, a.entradas.length - 1)] ?? 1);
+}
+
+function avaliadorHTML(inicial: string): string {
+  return `<form class="avaliar" id="avaliar" autocomplete="off">
+    <label class="avaliar-titulo" for="avaliar-x">Calcule uma saída</label>
+    <span class="avaliar-conta formula"><span class="nome-funcao">f(</span><input id="avaliar-x" value="${escapar(inicial)}" spellcheck="false" autocapitalize="off" aria-describedby="avaliar-saida" /><span class="nome-funcao">)</span><output id="avaliar-saida" for="avaliar-x"></output></span>
+  </form>`;
+}
+
+/** O aluno digita uma entrada e vê a conta, f(3) = 3² − 4·3 − 5 = −8; o ponto do gráfico vai junto. */
+function ligarAvaliador(a: AnaliseFuncao, [x0, x1]: [number, number]): void {
+  const form = resultado.querySelector<HTMLFormElement>('#avaliar');
+  const entrada = resultado.querySelector<HTMLInputElement>('#avaliar-x');
+  const saida = resultado.querySelector<HTMLOutputElement>('#avaliar-saida');
+  if (!form || !entrada || !saida) return;
+  const atualizar = (moverGrafico: boolean): void => {
+    const texto = entrada.value.trim();
+    if (!texto) {
+      saida.innerHTML = '';
+      if (moverGrafico) grafico.destacar(null);
+      return;
+    }
+    try {
+      const v = calcularEm(a, texto);
+      if (v.y === null) {
+        saida.innerHTML = ` <span class="fora">não existe: ${escapar(numeroDaAnalise(a, v.x))} está fora do domínio, D(f) = ${escapar(a.dominio.texto)}</span>`;
+      } else {
+        const [sinal, ...valor] = igualdadeDaAnalise(a, v.y).split(' ');
+        saida.innerHTML = `${IGUAL}${formulaHTML(v.conta)}<span class="op">${sinal}</span><span class="valor">${escapar(valor.join(' '))}</span>`;
+      }
+      if (moverGrafico) grafico.destacar(v.x >= x0 && v.x <= x1 ? v.x : null);
+    } catch (erro) {
+      saida.innerHTML = ` <span class="fora">${escapar(erro instanceof ErroDeEntrada ? erro.message : 'Não consegui ler esse número.')}</span>`;
+      if (moverGrafico) grafico.destacar(null);
+    }
+  };
+  form.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    atualizar(true);
+  });
+  entrada.addEventListener('input', () => atualizar(true));
+  atualizar(false);
+}
+
+/** Os pontos notáveis com etiqueta; com muitas raízes (seno, tangente), só as bolinhas. */
+function pontosDoGrafico(a: AnaliseFuncao): PontoDoGrafico[] {
+  const raizes = a.pontos.filter((p) => p.nome === 'raiz').length;
+  const coordenadas = (p: { x: number; y: number }): string => `(${numeroDaAnalise(a, p.x)}, ${numeroDaAnalise(a, p.y)})`;
+  return a.pontos.map((p) => {
+    let rotulo = coordenadas(p);
+    if (p.nome === 'raiz') rotulo = raizes <= 3 ? `raiz ${numeroDaAnalise(a, p.x)}` : '';
+    else if (p.nome === 'vértice') rotulo = `${a.tipo === 'modular' ? 'bico' : 'vértice'} ${coordenadas(p)}`;
+    else if (p.nome === 'máximo' || p.nome === 'mínimo') rotulo = `${p.nome} ${coordenadas(p)}`;
+    return { ...p, rotulo };
+  });
+}
+
+function mostrarFuncao(texto: string): void {
+  const a = analisarFuncao(texto);
+  const exemplo = exemploAtual?.f === texto ? exemploAtual : null;
+  const janela = exemplo?.janela ?? a.janela;
+  const outraForma = paraTexto(a.forma) !== paraTexto(a.entrada);
+  const formula = `<span class="nome-funcao">f(${X})</span>${IGUAL}${formulaHTML(a.entrada)}${outraForma ? `${IGUAL}${formulaHTML(a.forma)}` : ''}`;
+  const ficha: [string, string, string][] = [
+    ['Domínio', `D(f) = ${a.dominio.texto}`, 'dominio'],
+    ['Imagem', `Im(f) = ${a.imagem.texto}`, 'imagem'],
+    ...a.caracteristicas.map((c): [string, string, string] => [c.nome, c.valor, '']),
+  ];
+  const extra = `
+    <p class="forma-aula">Forma da aula: <span class="formula">${escapar(a.formaGeral)}</span>${a.parametrosTexto ? `, com ${escapar(a.parametrosTexto)}` : ''}</p>
+    ${a.avisos.map((aviso) => `<p class="aviso">${escapar(aviso)}</p>`).join('')}
+    <dl class="ficha">${ficha
+      .map(([nome, valor, classe], i) => `<div class="${classe}" style="--i: ${i}"><dt>${escapar(nome)}</dt><dd>${escapar(valor)}</dd></div>`)
+      .join('')}</dl>
+    ${exemplo?.contexto ? `<p class="contexto">${escapar(exemplo.contexto)}</p>` : ''}
+    <p class="interpretacao">${escapar(exemplo?.leitura ?? a.interpretacao)}</p>
+    ${tabelaDeEntradas(a, exemplo?.entradas)}
+    ${avaliadorHTML(exemplo?.avaliar ?? sugestaoDeEntrada(a))}`;
+  mostrarResultado(a.nome, formula, [a.tipo], conferirFuncao(a, janela), extra);
+  ligarAvaliador(a, janela);
+  mostrarPassos(a.passos.map((p) => ({ etiqueta: p.aspecto, html: `<span class="texto">${escapar(p.texto)}</span>` })));
+  mostrarNoGrafico(
+    {
+      tipo: 'funcao',
+      f: avaliador(a.entrada),
+      trigonometrica: a.tipo === 'trigonométrica',
+      estudo: {
+        janela,
+        dominio: a.dominio.intervalos,
+        furos: a.dominio.furos ? a.assintotas.verticais : [],
+        imagem: a.imagem.intervalos,
+        pontos: pontosDoGrafico(a),
+        verticais: a.assintotas.verticais,
+        horizontal: a.assintotas.horizontal,
+      },
+    },
+    `Gráfico de f(x) = ${paraTexto(a.entrada)}, ${a.nome.toLowerCase()}. O domínio, ${a.dominio.texto}, aparece aceso no eixo x, e a imagem, ${a.imagem.texto}, no eixo y.`,
+    [
+      [`f(${X})`, 'var(--cor-f)'],
+      ['domínio, no eixo x', 'var(--cor-dominio)'],
+      ['imagem, no eixo y', 'var(--cor-imagem)'],
+      ['pontos notáveis', '#facc15'],
+    ],
+  );
+}
+
 // ─── Limites (Aula 2) ──────────────────────────────────────────────────────────
 
 /** f escrita como na aula; a por partes ganha a chave com as duas fórmulas. */
@@ -642,7 +905,8 @@ function calcular(): void {
     return;
   }
   try {
-    if (modo === 'limite') mostrarLimite(texto);
+    if (modo === 'funcao') mostrarFuncao(texto);
+    else if (modo === 'limite') mostrarLimite(texto);
     else if (modo === 'derivada') mostrarDerivada(texto);
     else if (modo === 'integral') mostrarIntegral(texto);
     else mostrarDefinida(texto);
@@ -779,6 +1043,7 @@ function trocarModo(novo: Modo): void {
   modos.dataset.modo = novo;
   limites.hidden = novo !== 'definida';
   pontoDoLimite.hidden = novo !== 'limite';
+  campo.placeholder = SUGESTAO[novo];
   montarExemplos();
   // Conta que veio de um exemplo dá lugar ao primeiro exemplo do novo modo; a que o aluno digitou é refeita no novo modo.
   if (veioDeExemplo || !campo.value.trim()) void usarExemplo(EXEMPLOS[novo][0]!);
@@ -819,4 +1084,7 @@ rever.addEventListener('click', () => {
 if (calmo) document.querySelectorAll('animateMotion').forEach((animacao) => animacao.remove());
 criarFundo();
 montarExemplos();
-setTimeout(() => void usarExemplo(EXEMPLOS.derivada[0]!), calmo ? 0 : 700);
+// Só se o aluno ainda não trocou de modo nem digitou nada nesse meio-tempo
+setTimeout(() => {
+  if (digitacao === 0 && modo === 'derivada') void usarExemplo(EXEMPLOS.derivada[0]!);
+}, calmo ? 0 : 700);

@@ -15,6 +15,8 @@
   --area-positiva: rgba(56, 189, 248, 0.28);
   --area-negativa: rgba(251, 113, 133, 0.3);
   --erro: #fb7185;
+  --cor-dominio: #34d399;
+  --cor-imagem: #c084fc;
   --raio: 20px;
   --sombra: 0 24px 60px rgba(2, 6, 23, 0.55);
   --fonte: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', sans-serif;
@@ -265,12 +267,13 @@ h2 {
   color: var(--texto-suave);
 }
 
-/* ─── Modos (derivada / integral / definida) ───────────────────────────────── */
+/* ─── Modos (função / limite / derivada / integral / definida) ─────────────── */
 
 .modos {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* colunas iguais mesmo com rótulos de tamanhos diferentes: o indicador anda de 1/5 em 1/5 */
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   min-inline-size: 0;
   margin: 0 0 16px;
   padding: 4px;
@@ -314,23 +317,27 @@ h2 {
   top: 4px;
   bottom: 4px;
   left: 4px;
-  width: calc((100% - 8px) / 4);
+  width: calc((100% - 8px) / 5);
   border-radius: 999px;
   background: linear-gradient(135deg, #6d4aff, #2563eb);
   box-shadow: 0 8px 26px rgba(109, 74, 255, 0.45);
   transition: transform 0.55s cubic-bezier(0.3, 1.4, 0.4, 1);
 }
 
-.modos[data-modo='derivada'] .indicador {
+.modos[data-modo='limite'] .indicador {
   transform: translateX(100%);
 }
 
-.modos[data-modo='integral'] .indicador {
+.modos[data-modo='derivada'] .indicador {
   transform: translateX(200%);
 }
 
-.modos[data-modo='definida'] .indicador {
+.modos[data-modo='integral'] .indicador {
   transform: translateX(300%);
+}
+
+.modos[data-modo='definida'] .indicador {
+  transform: translateX(400%);
 }
 
 /* ─── Entrada ──────────────────────────────────────────────────────────────── */
@@ -1008,6 +1015,162 @@ h2 {
   margin-top: 6px;
 }
 
+/* ─── Funções (Aula 1) ─────────────────────────────────────────────────────── */
+
+.forma-aula {
+  margin: 10px 0 0;
+  color: var(--texto-suave);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.forma-aula .formula {
+  color: var(--texto);
+}
+
+.aviso {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(251, 146, 60, 0.4);
+  border-radius: 12px;
+  background: rgba(251, 146, 60, 0.1);
+  color: #fed7aa;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.ficha {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+  gap: 8px;
+  margin: 14px 0 0;
+}
+
+.ficha > div {
+  padding: 8px 11px;
+  border: 1px solid var(--painel-borda);
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.35);
+  animation: surgir 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: calc(var(--i) * 60ms + 150ms);
+}
+
+.ficha dt {
+  color: var(--texto-suave);
+  font: 700 0.68rem var(--fonte);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ficha dd {
+  margin: 3px 0 0;
+  font-family: var(--fonte-mat);
+  font-size: 1.02rem;
+  line-height: 1.35;
+}
+
+.ficha .dominio {
+  border-color: color-mix(in srgb, var(--cor-dominio) 45%, transparent);
+  background: color-mix(in srgb, var(--cor-dominio) 9%, transparent);
+}
+
+.ficha .imagem {
+  border-color: color-mix(in srgb, var(--cor-imagem) 45%, transparent);
+  background: color-mix(in srgb, var(--cor-imagem) 9%, transparent);
+}
+
+.ficha .dominio dd {
+  color: #a7f3d0;
+}
+
+.ficha .imagem dd {
+  color: #e9d5ff;
+}
+
+.entradas-saidas {
+  margin-top: 14px;
+  overflow-x: auto;
+}
+
+.tabela-deitada {
+  width: auto;
+  min-width: 100%;
+}
+
+.tabela-deitada th {
+  position: sticky;
+  left: 0;
+  background: #0d142b;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.tabela-deitada td {
+  white-space: nowrap;
+}
+
+.tabela-deitada tr:first-child td {
+  color: #a7f3d0;
+}
+
+.tabela-deitada tr:last-child td {
+  color: #e9d5ff;
+}
+
+.tabela-deitada td.fora,
+.fora {
+  color: var(--erro);
+}
+
+.avaliar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--painel-borda);
+  border-radius: 14px;
+  background: rgba(2, 6, 23, 0.4);
+}
+
+.avaliar-titulo {
+  color: var(--texto-suave);
+  font: 700 0.72rem var(--fonte);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.avaliar-conta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  font-size: 1.2rem;
+}
+
+.avaliar input {
+  width: 7ch;
+  margin: 0 2px;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--cor-dominio) 55%, transparent);
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.7);
+  color: #a7f3d0;
+  font: 600 1rem var(--fonte-mono);
+  text-align: center;
+}
+
+.avaliar input:focus-visible {
+  outline: 2px solid var(--cor-dominio);
+  outline-offset: 1px;
+}
+
+.avaliar output .fora {
+  font-family: var(--fonte);
+  font-size: 0.95rem;
+}
+
 .pendente {
   padding: 0 0.12em;
   border-radius: 0.25em;
@@ -1248,7 +1411,8 @@ h2 {
   }
 
   .modos label {
-    font-size: 0.85rem;
+    padding: 9px 2px;
+    font-size: 0.74rem;
   }
 
   #canvas {

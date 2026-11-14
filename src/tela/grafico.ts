@@ -1,8 +1,10 @@
 /**
- * Gráfico animado da tela, em canvas e sem biblioteca. A curva se desenha sozinha; na
- * derivada, a reta tangente percorre a curva e o ponto de f′ mostra que a altura de f′ é a
- * inclinação; na integral, a área se acumula até o ponto ("integrar é acumular"); na integral
- * definida, os retângulos de Riemann se multiplicam até virar a área exata.
+ * Gráfico animado da tela, em canvas e sem biblioteca. A curva se desenha sozinha; no estudo
+ * de uma função, o domínio se acende no eixo x, a imagem no eixo y, os pontos notáveis
+ * aparecem e um ponto leva cada entrada até a sua saída; na derivada, a reta tangente percorre
+ * a curva e o ponto de f′ mostra que a altura de f′ é a inclinação; na integral, a área se
+ * acumula até o ponto ("integrar é acumular"); na integral definida, os retângulos de Riemann
+ * se multiplicam até virar a área exata.
  * Com "reduzir movimento" ligado no sistema, tudo aparece pronto, sem animação.
  */
 
@@ -10,6 +12,35 @@ export type Funcao = (x: number) => number;
 
 /** Um limite lateral como o gráfico precisa: número, infinito, oscilação ou sem valor. */
 export type ValorNoGrafico = number | '+∞' | '-∞' | 'oscila' | 'sem valor';
+
+/** Intervalo da reta, como o motor de funções descreve domínio e imagem. */
+export interface Faixa {
+  de: number;
+  ate: number;
+  fechadoDe: boolean;
+  fechadoAte: boolean;
+}
+
+export interface PontoDoGrafico {
+  x: number;
+  y: number;
+  /** raiz, vértice, máximo, mínimo ou corte no eixo y: decide a cor. */
+  nome: string;
+  /** Texto da etiqueta; vazio, o ponto aparece sem etiqueta. */
+  rotulo: string;
+}
+
+/** O que a Aula 1 pede para enxergar no gráfico de uma função. */
+export interface Estudo {
+  janela: [number, number];
+  dominio: Faixa[];
+  /** Pontos tirados do domínio dentro da janela (os da tangente). */
+  furos: number[];
+  imagem: Faixa[];
+  pontos: PontoDoGrafico[];
+  verticais: number[];
+  horizontal: number | null;
+}
 
 export type Cena =
   | {
@@ -27,7 +58,7 @@ export type Cena =
       rotuloPonto: string;
       trigonometrica: boolean;
     }
-  | { tipo: 'funcao'; f: Funcao; trigonometrica: boolean }
+  | { tipo: 'funcao'; f: Funcao; trigonometrica: boolean; estudo?: Estudo }
   | { tipo: 'derivada'; f: Funcao; derivada: Funcao; trigonometrica: boolean }
   | { tipo: 'integral'; f: Funcao; primitiva: Funcao; trigonometrica: boolean }
   | {
@@ -78,7 +109,7 @@ const progresso = (t: number, inicio: number, duracao: number): number => suaviz
 export class Grafico {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly calmo = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  private readonly cores: Record<'f' | 'segunda' | 'tangente' | 'positiva' | 'negativa' | 'erro', string>;
+  private readonly cores: Record<'f' | 'segunda' | 'tangente' | 'positiva' | 'negativa' | 'erro' | 'dominio' | 'imagem', string>;
   private cena: Cena | null = null;
   private vista: Vista = { x0: -5, x1: 5, y0: -5, y1: 5 };
   private inicio = 0;
@@ -94,6 +125,8 @@ export class Grafico {
   private ultimoN = 0;
   private terminou = false;
   private ultimaLeitura = '';
+  /** Entrada escolhida fora do gráfico (a conta "f(3) = …"): o ponto móvel para nela. */
+  private fixo: number | null = null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -111,6 +144,8 @@ export class Grafico {
       positiva: cor('--area-positiva', 'rgba(56, 189, 248, 0.28)'),
       negativa: cor('--area-negativa', 'rgba(251, 113, 133, 0.30)'),
       erro: cor('--erro', '#fb7185'),
+      dominio: cor('--cor-dominio', '#34d399'),
+      imagem: cor('--cor-imagem', '#c084fc'),
     };
     new ResizeObserver(() => this.redimensionar()).observe(canvas);
     const mover = (ev: PointerEvent): void => {
@@ -135,15 +170,33 @@ export class Grafico {
     this.ultimoN = 0;
     this.terminou = false;
     this.ultimaLeitura = '';
+    this.fixo = null;
     const [x0, x1]: [number, number] =
       cena.tipo === 'definida'
         ? comMargem(cena.a, cena.b)
         : cena.tipo === 'limite'
           ? janelaDoLimite(cena)
-          : cena.trigonometrica
-            ? [-2 * Math.PI, 2 * Math.PI]
-            : [-4, 4];
+          : cena.tipo === 'funcao' && cena.estudo
+            ? cena.estudo.janela
+            : cena.trigonometrica
+              ? [-2 * Math.PI, 2 * Math.PI]
+              : [-4, 4];
     const curvas: Funcao[] = [cena.f];
+    if (cena.tipo === 'funcao' && cena.estudo) {
+      // os pontos notáveis e a assíntota horizontal também precisam caber
+      const faixa = faixaVertical(curvas, x0, x1);
+      const altura = faixa.y1 - faixa.y0;
+      const { pontos, horizontal } = cena.estudo;
+      const extras = [...pontos.filter((p) => p.x >= x0 && p.x <= x1).map((p) => p.y), ...(horizontal === null ? [] : [horizontal])];
+      this.vista = {
+        x0,
+        x1,
+        y0: Math.min(faixa.y0, ...extras.map((v) => v - altura * 0.12)),
+        y1: Math.max(faixa.y1, ...extras.map((v) => v + altura * 0.2)),
+      };
+      this.pedirQuadro();
+      return;
+    }
     if (cena.tipo === 'limite') {
       const faixa = faixaVertical(curvas, x0, x1);
       const extras = [cena.esquerda, cena.direita, cena.valorEmA].filter((v): v is number => typeof v === 'number');
@@ -167,6 +220,13 @@ export class Grafico {
       curvas.push(this.acumulada);
     }
     this.vista = { x0, x1, ...faixaVertical(curvas, x0, x1) };
+    this.pedirQuadro();
+  }
+
+  /** Para o ponto móvel numa entrada (a conta digitada na tela); null o solta de novo. */
+  destacar(x: number | null): void {
+    this.fixo = x;
+    this.ultimoMovimento = Number.NEGATIVE_INFINITY;
     this.pedirQuadro();
   }
 
@@ -202,7 +262,8 @@ export class Grafico {
 
     switch (cena.tipo) {
       case 'funcao':
-        this.curva(cena.f, this.cores.f, pCurva);
+        if (cena.estudo) continuar = this.estudo(cena.f, cena.estudo, t, pCurva);
+        else this.curva(cena.f, this.cores.f, pCurva);
         break;
       case 'derivada': {
         this.curva(cena.f, this.cores.f, pCurva);
@@ -242,6 +303,7 @@ export class Grafico {
     const ponteiro = this.ponteiro;
     let alvo: number;
     if (ponteiro !== null && performance.now() - this.ultimoMovimento < 2500) alvo = limitar(ponteiro, lo, hi);
+    else if (this.fixo !== null) alvo = limitar(this.fixo, lo, hi);
     else if (this.calmo) alvo = meio + amplitude * 0.45;
     else alvo = meio + amplitude * Math.sin(t / 1900);
     this.xAtual = this.xAtual === null || this.calmo ? alvo : this.xAtual + (alvo - this.xAtual) * 0.14;
@@ -249,6 +311,167 @@ export class Grafico {
   }
 
   // ─── Cenas ───────────────────────────────────────────────────────────────────
+
+  /**
+   * Estudo de uma função (Aula 1): a curva se desenha, o domínio se acende no eixo x e a
+   * imagem no eixo y (as "sombras" da curva em cada eixo), os pontos notáveis aparecem um a um
+   * e, por fim, um ponto leva cada entrada x até a sua saída f(x).
+   */
+  private estudo(f: Funcao, e: Estudo, t: number, pCurva: number): boolean {
+    const fimCurva = DURACAO.pausa + DURACAO.curva;
+    const pAssintotas = progresso(t, fimCurva, 500);
+    if (pAssintotas > 0) this.assintotas(e, pAssintotas);
+    this.curva(f, this.cores.f, pCurva, 2.6, e.furos);
+    const pDominio = progresso(t, fimCurva, 700);
+    const pImagem = progresso(t, fimCurva + 350, 700);
+    if (pDominio > 0) this.faixaNoEixo('x', e.dominio, e.furos, pDominio);
+    if (pImagem > 0) this.faixaNoEixo('y', e.imagem, [], pImagem);
+    const inicioPontos = fimCurva + 800;
+    e.pontos.forEach((p, i) => {
+      const pPonto = progresso(t, inicioPontos + i * 170, 420);
+      if (pPonto > 0) this.pontoNotavel(p, pPonto);
+    });
+    const pEntrada = progresso(t, inicioPontos + e.pontos.length * 170 + 300, 450);
+    if (pEntrada > 0) this.entradaESaida(f, e, this.posicao(t, [this.vista.x0, this.vista.x1]), pEntrada);
+    return true;
+  }
+
+  /** Assíntotas tracejadas, com a equação de cada uma. */
+  private assintotas(e: Estudo, alfa: number): void {
+    const { ctx } = this;
+    const { x0, x1, y0, y1 } = this.vista;
+    ctx.save();
+    ctx.globalAlpha = alfa * 0.85;
+    ctx.strokeStyle = this.cores.erro;
+    ctx.fillStyle = this.cores.erro;
+    ctx.setLineDash([6, 6]);
+    ctx.lineWidth = 1.5;
+    ctx.font = `600 12px ${FONTE}`;
+    const verticais = e.verticais.filter((v) => v > x0 && v < x1);
+    for (const v of verticais) {
+      ctx.beginPath();
+      ctx.moveTo(this.px(v), 0);
+      ctx.lineTo(this.px(v), this.altura);
+      ctx.stroke();
+    }
+    if (verticais.length === 1) {
+      ctx.textAlign = 'left';
+      ctx.fillText(`x = ${curto(verticais[0]!)}`, limitar(this.px(verticais[0]!) + 6, 4, this.largura - 60), 18);
+    }
+    if (e.horizontal !== null && e.horizontal > y0 && e.horizontal < y1) {
+      const y = this.py(e.horizontal);
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(this.largura, y);
+      ctx.stroke();
+      ctx.textAlign = 'right';
+      ctx.fillText(`y = ${curto(e.horizontal)}`, this.largura - 8, y - 8);
+    }
+    ctx.restore();
+  }
+
+  /**
+   * O domínio aceso no eixo x (da esquerda para a direita) ou a imagem no eixo y (de baixo
+   * para cima): faixas grossas, bolinha cheia nas pontas que entram e vazia nas que não entram.
+   */
+  private faixaNoEixo(eixo: 'x' | 'y', faixas: Faixa[], furos: number[], p: number): void {
+    const { ctx } = this;
+    const { x0, x1, y0, y1 } = this.vista;
+    const cor = eixo === 'x' ? this.cores.dominio : this.cores.imagem;
+    // no eixo de verdade quando ele aparece; senão, na borda do gráfico
+    const linha = eixo === 'x' ? limitar(this.py(0), 6, this.altura - 6) : limitar(this.px(0), 6, this.largura - 6);
+    const [lo, hi] = eixo === 'x' ? [x0, x1] : [y0, y1];
+    const ate = lo + (hi - lo) * p;
+    const ponto = (v: number): [number, number] => (eixo === 'x' ? [this.px(v), linha] : [linha, this.py(v)]);
+    ctx.save();
+    ctx.strokeStyle = cor;
+    ctx.globalAlpha = 0.85;
+    ctx.lineWidth = 7;
+    ctx.shadowColor = cor;
+    ctx.shadowBlur = 14;
+    for (const f of faixas) {
+      const [a, b] = [Math.max(f.de, lo), Math.min(f.ate, ate)];
+      if (b <= a) continue;
+      ctx.beginPath();
+      ctx.moveTo(...ponto(a));
+      ctx.lineTo(...ponto(b));
+      ctx.stroke();
+    }
+    ctx.restore();
+    for (const f of faixas) {
+      for (const [v, fechada] of [
+        [f.de, f.fechadoDe],
+        [f.ate, f.fechadoAte],
+      ] as const) {
+        if (Number.isFinite(v) && v >= lo && v <= ate) this.bolinha(...ponto(v), cor, fechada);
+      }
+    }
+    for (const v of furos) if (v >= lo && v <= ate) this.bolinha(...ponto(v), cor, false);
+  }
+
+  private corDoPonto(nome: string): string {
+    if (nome === 'raiz') return this.cores.segunda;
+    if (nome === 'corte no eixo y') return this.cores.tangente;
+    return '#facc15';
+  }
+
+  /** Um ponto notável que surge crescendo além do tamanho e volta, com a etiqueta. */
+  private pontoNotavel(p: PontoDoGrafico, prog: number): void {
+    const { x0, x1, y0, y1 } = this.vista;
+    if (p.x < x0 || p.x > x1 || p.y < y0 || p.y > y1) return;
+    const { ctx } = this;
+    const cor = this.corDoPonto(p.nome);
+    const raio = 6 * (1 + 0.7 * Math.sin(Math.PI * Math.min(1, prog)) * (1 - prog * 0.3));
+    const [cx, cy] = [this.px(p.x), this.py(p.y)];
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, prog * 1.6);
+    ctx.fillStyle = cor;
+    ctx.shadowColor = cor;
+    ctx.shadowBlur = 18;
+    ctx.beginPath();
+    ctx.arc(cx, cy, raio, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#0b1020';
+    ctx.beginPath();
+    ctx.arc(cx, cy, raio * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    if (p.rotulo && prog > 0.4) {
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, (prog - 0.4) * 2.5);
+      this.etiqueta(p.rotulo, p.x, p.y, cor);
+      ctx.restore();
+    }
+  }
+
+  /** A máquina da função: a entrada x sobe do eixo x até a curva e sai no eixo y como f(x). */
+  private entradaESaida(f: Funcao, e: Estudo, x: number, alfa: number): void {
+    const { ctx } = this;
+    const y = f(x);
+    const noEixoX = limitar(this.py(0), 6, this.altura - 6);
+    const noEixoY = limitar(this.px(0), 6, this.largura - 6);
+    const cx = this.px(x);
+    ctx.save();
+    ctx.globalAlpha = alfa;
+    if (!Number.isFinite(y)) {
+      this.tracejadoPx(cx, 0, cx, this.altura, this.cores.erro);
+      this.bolinha(cx, noEixoX, this.cores.erro, false);
+      ctx.restore();
+      this.ler(`entrada x = ${curto(x)}: fora do domínio, então f(x) não existe`);
+      return;
+    }
+    const cy = this.py(y);
+    this.tracejadoPx(cx, noEixoX, cx, cy, this.cores.dominio);
+    this.tracejadoPx(cx, cy, noEixoY, cy, this.cores.imagem);
+    this.bolinha(cx, noEixoX, this.cores.dominio, true);
+    this.bolinha(noEixoY, cy, this.cores.imagem, true);
+    this.ponto(x, y, this.cores.f);
+    this.etiqueta(`f(${curto(x)}) = ${curto(y)}`, x, y, this.cores.f);
+    ctx.restore();
+    const furo = e.furos.some((v) => Math.abs(v - x) < 1e-9);
+    this.ler(furo ? `entrada x = ${curto(x)}: fora do domínio` : `entrada x = ${curto(x)}   →   saída f(x) = ${curto(y)}`);
+  }
 
   private tangente(cena: Extract<Cena, { tipo: 'derivada' }>, x: number, alfa: number): void {
     const y = cena.f(x);
@@ -660,6 +883,37 @@ export class Grafico {
     ctx.beginPath();
     ctx.moveTo(this.px(xa), this.py(ya));
     ctx.lineTo(this.px(xb), this.py(yb));
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** Tracejado em pixels (os eixos podem estar presos na borda do gráfico). */
+  private tracejadoPx(xa: number, ya: number, xb: number, yb: number, cor: string): void {
+    const { ctx } = this;
+    ctx.save();
+    ctx.strokeStyle = cor;
+    ctx.globalAlpha *= 0.85;
+    ctx.setLineDash([4, 5]);
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(xa, ya);
+    ctx.lineTo(xb, yb);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** Bolinha cheia (o valor entra no conjunto) ou vazia (não entra), em pixels. */
+  private bolinha(cx: number, cy: number, cor: string, cheia: boolean): void {
+    const { ctx } = this;
+    ctx.save();
+    ctx.lineWidth = 2.4;
+    ctx.strokeStyle = cor;
+    ctx.fillStyle = cheia ? cor : '#0b1226';
+    ctx.shadowColor = cor;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 5.5, 0, Math.PI * 2);
+    ctx.fill();
     ctx.stroke();
     ctx.restore();
   }
