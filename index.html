@@ -43,9 +43,13 @@
         <h1 class="titulo">Cálculo <span>CDI</span></h1>
         <p class="subtitulo">Funções, limites, derivadas e integrais com o passo a passo da aula, um gráfico vivo e a conta conferida.</p>
       </div>
+      <nav class="vistas" aria-label="Partes do app">
+        <a href="#calculadora" id="vista-calculadora" aria-current="page"><span aria-hidden="true">🧮</span> Calculadora</a>
+        <a href="#funcoes" id="vista-conteudo"><span aria-hidden="true">📖</span> Conteúdo das aulas</a>
+      </nav>
     </header>
 
-    <main class="app">
+    <main class="app" id="calculadora">
       <section class="painel entrada" aria-label="Entrada">
         <fieldset class="modos" id="modos" data-modo="derivada">
           <legend class="so-leitor">O que calcular</legend>
@@ -85,6 +89,7 @@
 
         <p class="exemplos-titulo">Experimente</p>
         <div class="chips" id="exemplos"></div>
+        <a class="entender" id="entender" href="#derivadas"><span aria-hidden="true">📖</span> <span id="entender-texto">Entenda as derivadas (Aula 3)</span></a>
 
         <details class="ajuda">
           <summary>Como digitar</summary>
@@ -127,6 +132,17 @@
           <li class="vazio">O passo a passo aparece aqui.</li>
         </ol>
       </section>
+    </main>
+
+    <main class="conteudo" id="conteudo" hidden>
+      <nav class="abas-aulas" id="abas-aulas" aria-label="Aulas" data-aula="funcoes">
+        <span class="indicador" aria-hidden="true"></span>
+        <a href="#funcoes" data-aula="funcoes"><small>Aula 1</small>Funções</a>
+        <a href="#limites" data-aula="limites"><small>Aula 2</small>Limites</a>
+        <a href="#derivadas" data-aula="derivadas"><small>Aula 3</small>Derivadas</a>
+        <a href="#integrais" data-aula="integrais"><small>Aula 4</small>Integrais</a>
+      </nav>
+      <article class="aula" id="aula"></article>
     </main>
 
     <footer class="rodape">Feito para a disciplina de Cálculo Diferencial e Integral · Aula 1 (funções), Aula 2 (limites), Aula 3 (derivadas) e Aula 4 (integrais)</footer>

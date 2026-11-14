@@ -1037,19 +1037,19 @@ function acharPartida(f: Funcao, x0: number, x1: number): { partida: number; tre
 }
 
 /** 1, 2 ou 5 vezes uma potência de 10, perto de `bruto`. */
-function passoBonito(bruto: number): number {
+export function passoBonito(bruto: number): number {
   const potencia = 10 ** Math.floor(Math.log10(bruto));
   const fracao = bruto / potencia;
   return (fracao < 1.5 ? 1 : fracao < 3.5 ? 2 : fracao < 7.5 ? 5 : 10) * potencia;
 }
 
 /** Marcas em múltiplos de π para gráficos de seno e cosseno. */
-function passoDePi(faixa: number): number {
+export function passoDePi(faixa: number): number {
   const candidatos = [Math.PI / 4, Math.PI / 2, Math.PI, 2 * Math.PI];
   return candidatos.find((p) => faixa / p <= 12) ?? 2 * Math.PI;
 }
 
-function rotuloDePi(x: number): string {
+export function rotuloDePi(x: number): string {
   const quartos = Math.round(x / (Math.PI / 4));
   const mdc = (a: number, b: number): number => (b === 0 ? a : mdc(b, a % b));
   const g = mdc(Math.abs(quartos), 4);

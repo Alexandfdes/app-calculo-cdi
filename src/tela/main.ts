@@ -16,6 +16,8 @@ import type { PassoIntegral, RegraIntegral } from '../motor/integrais';
 import { avaliarFuncao, calcularLimite, lerFuncaoDoLimite } from '../motor/limites';
 import type { FuncaoDoLimite, PassoLimite, ResultadoLimite, TecnicaLimite, ValorLimite } from '../motor/limites';
 import { numeroBonito, numeroParaLer } from '../motor/numeros';
+import { iniciarConteudo } from './aulas';
+import type { Conta } from './conteudos';
 import { escapar, formulaHTML, integralHTML, temPendencia } from './formula';
 import { Grafico, curto, somaDeRiemann } from './grafico';
 import type { Cena, Funcao, PontoDoGrafico } from './grafico';
@@ -230,6 +232,15 @@ const ETIQUETAS: Record<Etiqueta, { nome: string; cor: string }> = {
   'corte no eixo y': { nome: 'Corte no eixo y', cor: '#a3e635' },
 };
 
+/** A aula que explica cada modo, para o link "Entenda…" da calculadora. */
+const AULA_DO_MODO: Record<Modo, { id: string; texto: string }> = {
+  funcao: { id: 'funcoes', texto: 'Entenda as funções (Aula 1)' },
+  limite: { id: 'limites', texto: 'Entenda os limites (Aula 2)' },
+  derivada: { id: 'derivadas', texto: 'Entenda as derivadas (Aula 3)' },
+  integral: { id: 'integrais', texto: 'Entenda as integrais (Aula 4)' },
+  definida: { id: 'integrais', texto: 'Entenda as integrais (Aula 4)' },
+};
+
 /** O que o campo sugere em cada modo. */
 const SUGESTAO: Record<Modo, string> = {
   funcao: 'por exemplo, x^2 - 4*x - 5',
@@ -271,6 +282,8 @@ const placar = elemento<HTMLDivElement>('riemann');
 const rever = elemento<HTMLButtonElement>('rever');
 const campoPonto = elemento<HTMLInputElement>('ponto');
 const pontoDoLimite = elemento<HTMLDivElement>('ponto-limite');
+const entender = elemento<HTMLAnchorElement>('entender');
+const entenderTexto = elemento<HTMLSpanElement>('entender-texto');
 
 let modo: Modo = 'derivada';
 let digitacao = 0;
@@ -1038,16 +1051,44 @@ function montarExemplos(): void {
   );
 }
 
-function trocarModo(novo: Modo): void {
+/** O link da calculadora para a aula que explica o modo aberto. */
+function apontarAula(m: Modo): void {
+  entender.href = `#${AULA_DO_MODO[m].id}`;
+  entenderTexto.textContent = AULA_DO_MODO[m].texto;
+}
+
+/** `exemplo`: a conta que vem do conteúdo das aulas, no lugar do primeiro exemplo do modo. */
+function trocarModo(novo: Modo, exemplo?: Exemplo): void {
   modo = novo;
   modos.dataset.modo = novo;
   limites.hidden = novo !== 'definida';
   pontoDoLimite.hidden = novo !== 'limite';
   campo.placeholder = SUGESTAO[novo];
+  apontarAula(novo);
   montarExemplos();
   // Conta que veio de um exemplo dá lugar ao primeiro exemplo do novo modo; a que o aluno digitou é refeita no novo modo.
-  if (veioDeExemplo || !campo.value.trim()) void usarExemplo(EXEMPLOS[novo][0]!);
+  if (exemplo) void usarExemplo(exemplo);
+  else if (veioDeExemplo || !campo.value.trim()) void usarExemplo(EXEMPLOS[novo][0]!);
   else calcular();
+}
+
+/**
+ * Botão "Calcular" do conteúdo das aulas: a conta vai para a calculadora, no modo certo, e se
+ * digita sozinha. Se ela é um dos exemplos do modo (os do veículo), vem com o problema e a leitura.
+ */
+function calcularConta(conta: Conta): void {
+  const radio = document.getElementById(`modo-${conta.modo}`) as HTMLInputElement | null;
+  if (radio) radio.checked = true;
+  const conhecido = EXEMPLOS[conta.modo].find((e) => e.f === conta.f && e.ponto === conta.ponto && e.a === conta.a && e.b === conta.b);
+  const exemplo: Exemplo = conhecido ?? { f: conta.f };
+  if (!conhecido) {
+    if (conta.ponto !== undefined) exemplo.ponto = conta.ponto;
+    if (conta.a !== undefined) exemplo.a = conta.a;
+    if (conta.b !== undefined) exemplo.b = conta.b;
+  }
+  navegacao.irPara('calculadora');
+  trocarModo(conta.modo, exemplo);
+  radio?.focus({ preventScroll: true });
 }
 
 // ─── Ligações ──────────────────────────────────────────────────────────────────
@@ -1084,6 +1125,8 @@ rever.addEventListener('click', () => {
 if (calmo) document.querySelectorAll('animateMotion').forEach((animacao) => animacao.remove());
 criarFundo();
 montarExemplos();
+apontarAula(modo);
+const navegacao = iniciarConteudo(calcularConta);
 // Só se o aluno ainda não trocou de modo nem digitou nada nesse meio-tempo
 setTimeout(() => {
   if (digitacao === 0 && modo === 'derivada') void usarExemplo(EXEMPLOS.derivada[0]!);
