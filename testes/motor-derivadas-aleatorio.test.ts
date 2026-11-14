@@ -46,7 +46,8 @@ describe('Conferência em massa com o math.js', () => {
   const sorteio = gerador(2026);
   const expressoes = Array.from({ length: 300 }, () => expressaoAleatoria(sorteio, 1 + Math.floor(sorteio() * 3)));
 
-  it('300 expressões aleatórias: a derivada do motor é equivalente à do oráculo', () => {
+  // pesado como o das integrais: folga para a suíte inteira rodando em paralelo
+  it('300 expressões aleatórias: a derivada do motor é equivalente à do oráculo', { timeout: 20_000 }, () => {
     const divergentes = expressoes.filter(
       (f) => !equivalentes(paraTexto(derivar(f).resultado), derivadaOraculo(f), [-2, 2]),
     );

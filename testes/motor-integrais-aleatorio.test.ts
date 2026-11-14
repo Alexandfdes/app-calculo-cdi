@@ -54,7 +54,8 @@ describe('Conferência em massa com o math.js', () => {
     Array.from({ length: 1 + Math.floor(sorteio() * 3) }, () => termoAleatorio(sorteio)).join(' + '),
   );
 
-  it('300 integrandos aleatórios: a primitiva do motor passa na conferência do oráculo', () => {
+  // ~3 s sozinho; com a suíte inteira rodando em paralelo, os 5 s padrão às vezes não bastam
+  it('300 integrandos aleatórios: a primitiva do motor passa na conferência do oráculo', { timeout: 20_000 }, () => {
     const divergentes = integrandos.filter((f) => {
       const esperado = paraTexto(integrar(f).resultado);
       return !validaIntegral({ id: '', fonte: '', f, esperado, regras: [], dominio: [-2, 2] });
