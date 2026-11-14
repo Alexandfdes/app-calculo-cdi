@@ -15,7 +15,7 @@ import { isConditionalNode, isOperatorNode, isParenthesisNode, isSymbolNode, par
 import type { MathNode } from 'mathjs';
 import { E, ErroDeEntrada, avaliar, contem, div, func, iguais, lerExpressao, mul, neg, num, paraTexto, pot, soma, sub, trocar, variavel } from './expressao';
 import type { Expr, NomeFuncao } from './expressao';
-import { numeroBonito } from './numeros';
+import { numeroParaLer } from './numeros';
 import { comoPolinomio, dividirPorRaiz, grau, lider, paraExpr, zeraEm } from './polinomios';
 import type { Polinomio } from './polinomios';
 import { simplificar } from './simplificar';
@@ -197,7 +197,7 @@ const infinito = (sinal: number): Valor => ({ tipo: 'infinito', sinal: sinal > 0
 const indeterminada = (forma: string): Valor => ({ tipo: 'indeterminada', forma });
 const ehZero = (v: Valor): boolean => v.tipo === 'finito' && v.v === 0;
 const textoInfinito = (sinal: number): string => (sinal > 0 ? '+∞' : '−∞');
-const bonito = (v: number): string => numeroBonito(v).replace(/\*/g, '').replace(/-/g, '−');
+const bonito = numeroParaLer;
 
 /** sem valor ou indeterminada em algum dos dois: isso decide o resultado. */
 const problema = (...valores: Valor[]): Valor | null => valores.find((v) => v.tipo === 'sem valor' || v.tipo === 'indeterminada') ?? null;

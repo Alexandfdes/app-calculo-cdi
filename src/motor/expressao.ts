@@ -250,6 +250,93 @@ export function paraTexto(e: Expr): string {
 const atomico = (e: Expr): boolean =>
   (e.tipo === 'num' && e.valor >= 0) || e.tipo === 'var' || e.tipo === 'const';
 
+// ─── Texto para ler ────────────────────────────────────────────────────────────
+
+const SOBRESCRITO: Record<string, string> = {
+  '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹', '−': '⁻', x: 'ˣ',
+};
+const SUBSCRITO: Record<string, string> = {
+  '0': '₀', '1': '₁', '2': '₂', '3': '₃', '4': '₄', '5': '₅', '6': '₆', '7': '₇', '8': '₈', '9': '₉',
+};
+
+const numeroLido = (v: number): string => {
+  const texto = String(Number(Math.abs(v).toPrecision(10)));
+  return v < 0 ? `−${texto}` : texto;
+};
+
+const lido = (e: Expr, minimo: number): string => (precedencia(e) < minimo ? `(${paraLeitura(e)})` : paraLeitura(e));
+
+/**
+ * A expressão para ler numa frase, como no caderno: x² − 4x − 5, 3·2ˣ, 2 sen x, |x − 2|,
+ * log₁₀ x. Não volta para o leitor: para isso existe paraTexto.
+ */
+export function paraLeitura(e: Expr): string {
+  switch (e.tipo) {
+    case 'num':
+      return numeroLido(e.valor);
+    case 'var':
+      return e.nome;
+    case 'const':
+      return e.nome === 'pi' ? 'π' : 'e';
+    case 'soma':
+      if (e.b.tipo === 'num' && e.b.valor < 0) return `${lido(e.a, 1)} − ${numeroLido(-e.b.valor)}`;
+      if (e.b.tipo === 'neg') return `${lido(e.a, 1)} − ${lido(e.b.a, 2)}`;
+      return `${lido(e.a, 1)} + ${lido(e.b, 1)}`;
+    case 'sub':
+      return `${lido(e.a, 1)} − ${lido(e.b, 2)}`;
+    case 'mul':
+      return `${lido(e.a, 2)}${juntarFatores(e.a, e.b)}${lido(e.b, 4)}`;
+    case 'div':
+      return `${lido(e.a, 2)}/${lido(e.b, 4)}`;
+    case 'neg':
+      return `−${lido(e.a, 2)}`;
+    case 'pot':
+      return potenciaLida(e.base, e.exp);
+    case 'func':
+      if (e.nome === 'abs') return `|${paraLeitura(e.arg)}|`;
+      if (e.nome === 'raiz') return `√${atomico(e.arg) ? paraLeitura(e.arg) : `(${paraLeitura(e.arg)})`}`;
+      return `${e.nome}${argumentoLido(e.arg)}`;
+    case 'log': {
+      const base = paraLeitura(e.base);
+      if (!/^\d+$/.test(base)) return `log(${paraLeitura(e.arg)}, ${base})`;
+      return `log${[...base].map((c) => SUBSCRITO[c]).join('')}${argumentoLido(e.arg)}`;
+    }
+    case 'derivada':
+      return `(${paraLeitura(e.de)})′`;
+    case 'integral':
+      return `∫ ${lido(e.de, 2)} d${e.variavel}`;
+  }
+}
+
+/** sen x e ln x sem parênteses quando o argumento é só a variável (ou um número, ou uma constante). */
+const argumentoLido = (arg: Expr): string =>
+  atomico(arg) ? ` ${paraLeitura(arg)}` : arg.tipo === 'func' && arg.nome === 'abs' ? paraLeitura(arg) : `(${paraLeitura(arg)})`;
+
+/** 2x, 2π, 2(x + 1) e 2|x| colados; 2 sen x com espaço; 3·2ˣ e o resto com ponto. */
+function juntarFatores(a: Expr, b: Expr): string {
+  const letra = b.tipo === 'var' || b.tipo === 'const' || (b.tipo === 'pot' && (b.base.tipo === 'var' || b.base.tipo === 'const'));
+  const barra = b.tipo === 'func' && (b.nome === 'abs' || b.nome === 'raiz');
+  const numero = a.tipo === 'num' || (a.tipo === 'neg' && a.a.tipo === 'num');
+  if (numero && (letra || barra || precedencia(b) < 4)) return '';
+  if ((b.tipo === 'func' && !barra) || b.tipo === 'log') return ' ';
+  return '·';
+}
+
+/** Expoente simples vira sobrescrito (x², 2ˣ, e⁻²ˣ); o resto fica com ^: 2^(x + 1). */
+function potenciaLida(base: Expr, exp: Expr): string {
+  const expoente = paraLeitura(exp);
+  const inteiroPositivo = exp.tipo === 'num' && Number.isInteger(exp.valor) && exp.valor > 0;
+  const sobrescrito = (t: string): string => [...t].map((c) => SOBRESCRITO[c] ?? c).join('');
+  // sen² x, como nos slides; |x|² e o resto das funções ganham parênteses só quando precisam
+  if ((base.tipo === 'func' && base.nome !== 'abs') || base.tipo === 'log') {
+    if (inteiroPositivo && base.tipo === 'func' && base.nome !== 'raiz') return `${base.nome}${sobrescrito(expoente)}${argumentoLido(base.arg)}`;
+    return `(${paraLeitura(base)})${inteiroPositivo ? sobrescrito(expoente) : `^(${expoente})`}`;
+  }
+  const corpo = lido(base, 5);
+  if (expoente !== '' && expoente !== '−' && /^−?\d*x?$/.test(expoente)) return corpo + sobrescrito(expoente);
+  return `${corpo}^${atomico(exp) ? expoente : `(${expoente})`}`;
+}
+
 // ─── Valor numérico ────────────────────────────────────────────────────────────
 
 /** Só números reais finitos; o resto (divisão por zero, ln de negativo…) vira NaN. */
