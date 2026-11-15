@@ -461,6 +461,9 @@ const pontaDoIntervalo = (v: number): string => (Number.isFinite(v) ? bonito(v) 
 /** O limite de integração como fórmula; no infinito, o símbolo. */
 const limiteHTML = (e: Expr): string => (e.tipo === 'num' && !Number.isFinite(e.valor) ? escapar(pontaDoIntervalo(e.valor)) : formulaHTML(e));
 
+/** O limite de integração escrito no chip do exemplo: inf vira +∞. */
+const limiteDoChip = (texto: string): string => (texto === 'inf' ? '+∞' : texto === '-inf' ? '−∞' : formulaHTML(lerExpressao(texto)));
+
 /** A integral definida conferida por uma soma de Riemann bem fina. */
 function conferirDefinida(r: ResultadoIntegralDefinida, a: number, b: number): string {
   if (r.valor === 'diverge') return '';
@@ -514,9 +517,9 @@ function passosDaDefinida(r: ResultadoIntegralDefinida, a: number, b: number): I
     const limites = ([a, b] as const)
       .map((v, i) => [v, r.noInfinito![i as 0 | 1]] as const)
       .filter(([v]) => !Number.isFinite(v))
-      .map(([v, L]) => `F(${pontaDoIntervalo(v)}) é o limite de F(${X}) com ${X} → ${pontaDoIntervalo(v)}, que ${L === 'oscila' || L === 'não existe' || L === 'sem valor' ? 'não existe' : `vale ${quanto(L)}`}`);
+      .map(([v, L]) => `F(${escapar(pontaDoIntervalo(v))}) é o limite de F(${X}) com ${X} → ${escapar(pontaDoIntervalo(v))}, que ${L === 'oscila' || L === 'não existe' || L === 'sem valor' ? 'não existe' : `vale ${escapar(quanto(L))}`}`);
     const fim = r.valor === 'diverge' ? ' Esse limite não é um número: a integral imprópria <strong>diverge</strong>.' : '';
-    itens.push({ etiqueta: 'imprópria', html: `<span class="texto">O intervalo não tem fim: ${escapar(limites.join('; '))}.${fim}</span>` });
+    itens.push({ etiqueta: 'imprópria', html: `<span class="texto">O intervalo não tem fim: ${limites.join('; ')}.${fim}</span>` });
     if (r.valor === 'diverge') return itens;
     const Fde = (v: number, i: 0 | 1): number => (Number.isFinite(v) ? avaliador(F)(v) : (r.noInfinito![i] as number));
     const [Fa, Fb] = [Fde(a, 0), Fde(b, 1)];
@@ -1106,7 +1109,7 @@ function montarExemplos(): void {
       const ponto = exemplo.ponto === undefined ? '' : exemplo.ponto === 'inf' ? '+∞' : formulaHTML(lerExpressao(exemplo.ponto));
       const limitesDoExemplo =
         exemplo.a !== undefined && exemplo.b !== undefined
-          ? ` <span class="chip-limites">de ${formulaHTML(lerExpressao(exemplo.a))} a ${formulaHTML(lerExpressao(exemplo.b))}</span>`
+          ? ` <span class="chip-limites">de ${limiteDoChip(exemplo.a)} a ${limiteDoChip(exemplo.b)}</span>`
           : ponto
             ? ` <span class="chip-limites">${X} → ${ponto}</span>`
             : '';
