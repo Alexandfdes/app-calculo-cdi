@@ -1157,9 +1157,22 @@ function atualizarPrevia(): void {
   }
 }
 
+/** Quantos exemplos aparecem antes do botão "mais". */
+const EXEMPLOS_VISIVEIS = 4;
+
 function montarExemplos(): void {
+  exemplos.classList.remove('todos');
+  const lista = EXEMPLOS[modo];
+  const mais = document.createElement('button');
+  mais.type = 'button';
+  mais.className = 'chip mais-exemplos';
+  mais.textContent = `+ ${lista.length - EXEMPLOS_VISIVEIS} exemplos`;
+  mais.addEventListener('click', () => {
+    exemplos.classList.add('todos');
+    mais.remove();
+  });
   exemplos.replaceChildren(
-    ...EXEMPLOS[modo].map((exemplo, i) => {
+    ...lista.map((exemplo, i) => {
       const botao = document.createElement('button');
       const ponto = exemplo.ponto === undefined ? '' : exemplo.ponto === 'inf' ? '+∞' : formulaHTML(lerExpressao(exemplo.ponto));
       const limitesDoExemplo =
@@ -1169,7 +1182,7 @@ function montarExemplos(): void {
             ? ` <span class="chip-limites">${X} → ${ponto}</span>`
             : '';
       botao.type = 'button';
-      botao.className = 'chip formula';
+      botao.className = i < EXEMPLOS_VISIVEIS ? 'chip formula' : 'chip formula extra';
       botao.style.setProperty('--i', String(i));
       botao.innerHTML = (exemplo.rotulo ? `<span class="chip-rotulo">${escapar(exemplo.rotulo)}</span>` : formulaHTML(lerExpressao(exemplo.f))) + limitesDoExemplo;
       const descricao = exemplo.a !== undefined ? ` de ${exemplo.a} a ${exemplo.b}` : exemplo.ponto !== undefined ? ` com x indo a ${exemplo.ponto}` : '';
@@ -1178,6 +1191,7 @@ function montarExemplos(): void {
       return botao;
     }),
   );
+  if (lista.length > EXEMPLOS_VISIVEIS) exemplos.append(mais);
 }
 
 /** O link da calculadora para a aula que explica o modo aberto. */

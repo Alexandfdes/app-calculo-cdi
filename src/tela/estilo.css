@@ -2598,3 +2598,53 @@ h2 {
 .fundo {
   display: none;
 }
+
+/* tela mais limpa: sem as etiquetas das regras embaixo do resultado */
+.regras {
+  display: none;
+}
+
+/* exemplos e formas prontas recolhidos num botão */
+.atalhos {
+  margin-top: 14px;
+}
+
+.atalhos > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border: 1px solid var(--painel-borda);
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--texto);
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.atalhos > summary::-webkit-details-marker {
+  display: none;
+}
+
+.atalhos > summary::before {
+  content: '▸';
+  transition: transform 0.2s;
+}
+
+.atalhos[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.atalhos[open] > summary {
+  margin-bottom: 12px;
+}
+
+#exemplos:not(.todos) .extra {
+  display: none;
+}
+
+.mais-exemplos {
+  color: var(--texto-suave, #94a3b8);
+  font-size: 0.9rem;
+}
