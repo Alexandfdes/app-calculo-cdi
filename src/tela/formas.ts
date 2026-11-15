@@ -30,6 +30,7 @@ export class Formas {
   ) {
     raiz.innerHTML = `
       <p class="exemplos-titulo">Monte a função</p>
+      <p class="formas-dica">Escolha uma forma e preencha só os números.</p>
       <div class="chips formas-fichas" role="group" aria-label="Forma geral"></div>
       <div class="formas-caixas formula" hidden></div>`;
     this.fichas = raiz.querySelector('.formas-fichas')!;

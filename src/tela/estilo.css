@@ -2587,3 +2587,9 @@ h2 {
     display: none;
   }
 }
+
+.formas-dica {
+  margin: -4px 0 8px;
+  color: var(--texto-suave, #94a3b8);
+  font-size: 0.88rem;
+}
