@@ -21,6 +21,9 @@ describe('Motor de derivadas: casos dos slides', () => {
 describe('O resultado sai simplificado (Aula 3, quadro 8: "não simplificar a expressão final")', () => {
   const formas: [string, string][] = [
     ['7', '0'],
+    ['ln(x^(1/3))', '1/(3*x)'],
+    ['x^(1/3)*x^(1/3)', '2/(3*x^(1/3))'],
+    ['x^(1/3)*x^(2/3)', '1'],
     ['x^3', '3*x^2'],
     ['x^3 - 4*x + 2', '3*x^2 - 4'],
     ['1/x', '-1/x^2'],
@@ -71,6 +74,18 @@ describe('Valor de potência com expoente fracionário', () => {
     expect(avaliar(lerExpressao('x^(-1/3)'), { x: -8 })).toBeCloseTo(-0.5, 12);
     expect(Number.isNaN(avaliar(lerExpressao('x^(1/2)'), { x: -4 }))).toBe(true);
     expect(Number.isNaN(avaliar(lerExpressao('x^0.3'), { x: -2 }))).toBe(true);
+  });
+});
+
+describe('Exponencial de base negativa não é função real', () => {
+  it('(−2)^x não tem derivada: o motor recusa em vez de escrever ln(−2)', () => {
+    expect(() => derivar('(-2)^x')).toThrow(/base precisa ser positiva/);
+  });
+  it('com a variável no expoente, base negativa só tem valor em expoente inteiro', () => {
+    expect(Number.isNaN(avaliar(lerExpressao('(-2)^x'), { x: 1 / 3 }))).toBe(true);
+    expect(Number.isNaN(avaliar(lerExpressao('x^x'), { x: -1 / 3 }))).toBe(true);
+    expect(avaliar(lerExpressao('(-2)^x'), { x: 3 })).toBe(-8);
+    expect(avaliar(lerExpressao('(-8)^(1/3)'))).toBeCloseTo(-2, 12);
   });
 });
 

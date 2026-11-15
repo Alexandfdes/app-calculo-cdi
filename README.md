@@ -55,7 +55,7 @@ src/motor/    o cálculo, sem nada de tela
   expressao.ts     leitura, escrita e valor numérico das expressões
   simplificar.ts   simplificação
   derivadas.ts     regras de derivação e passo a passo
-  integrais.ts     integrais imediatas, substituição, por partes, reescrita
+  integrais.ts     integrais imediatas, substituição e reescrita do integrando
   definidas.ts     integral definida (TFC), descontinuidades e área com |f|
   limites.ts       limites laterais, no infinito, indeterminações
   funcoes.ts       modo Função: tipo, domínio, raízes (Aula 1)
@@ -73,7 +73,8 @@ Os testes cobrem os exercícios dos slides, casos de borda e sorteios. Nos sorte
 
 O motor recusa com aviso, em vez de dar resposta errada, o que está fora do conteúdo das aulas:
 
-- integrais que pedem frações parciais ou arco-tangente;
-- limites em que os termos dominantes se cancelam, ou com oscilação no infinito, como x·sen x.
+- integrais que pedem integração por partes, identidades trigonométricas, frações parciais ou arco-tangente;
+- limites em que os termos dominantes se cancelam, ou com oscilação no infinito, como x·sen x;
+- funções com a variável na base e no expoente (xˣ) e exponenciais de base negativa.
 
 Raiz de índice ímpar vale para x negativo (∛−8 = −2); raiz de índice par, não.

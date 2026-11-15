@@ -172,6 +172,8 @@ function categoria(f: Expr): number {
 interface Fator {
   base: Expr;
   exp: number;
+  /** Algum expoente veio escrito como fração (1/3): a soma volta a ser escrita como fração. */
+  fracao?: boolean;
 }
 
 /** sen(u)/cos(u) vira tg(u); cos(u)/sen(u) vira cotg(u). */
@@ -205,19 +207,28 @@ function monomio(e: Expr): Expr {
   // Potências da mesma base: x²·x = x³, x/x² = 1/x
   const fatores: Fator[] = [];
   const acumular = (f: Expr, sinal: number): void => {
-    const numerico = f.tipo === 'pot' && ehNum(f.exp);
-    const base = numerico ? f.base : f;
-    const exp = numerico && ehNum(f.exp) ? f.exp.valor : 1;
+    // expoente numérico (x²) ou fração de inteiros (x^(1/3)): x^(1/3)·x^(2/3) = x
+    const fr = f.tipo === 'pot' ? (ehNum(f.exp) ? ([f.exp.valor, 1] as const) : fracaoDe(f.exp)) : null;
+    const base = f.tipo === 'pot' && fr ? f.base : f;
+    const exp = fr ? fr[0] / fr[1] : 1;
     const existente = fatores.find((t) => iguais(t.base, base));
-    if (existente) existente.exp += sinal * exp;
-    else fatores.push({ base, exp: sinal * exp });
+    const escrita = fr !== null && fr[1] !== 1; // veio escrito como fração: a resposta sai como fração, e não 0,333…
+    if (existente) {
+      existente.exp = escrita || existente.fracao ? arredondarFracao(existente.exp + sinal * exp) : existente.exp + sinal * exp;
+      existente.fracao ||= escrita;
+    } else fatores.push({ base, exp: sinal * exp, fracao: escrita });
   };
   m.cima.forEach((f) => acumular(f, 1));
   m.baixo.forEach((f) => acumular(f, -1));
   trocarQuociente(fatores, 'sen', 'cos', 'tg');
   trocarQuociente(fatores, 'cos', 'sen', 'cotg');
 
-  const montar = (t: Fator): Expr => (Math.abs(t.exp) === 1 ? t.base : pot(t.base, num(Math.abs(t.exp))));
+  const montar = (t: Fator): Expr => {
+    const n = Math.abs(t.exp);
+    if (n === 1) return t.base;
+    const fr = t.fracao && !Number.isInteger(n) ? comoFracao(n) : null;
+    return pot(t.base, fr ? daFracao(fr[0], fr[1]) : num(n));
+  };
   // dentro da mesma categoria, pela escrita: 2·cos·sen e 2·sen·cos viram o mesmo termo
   const ordenados = (lista: Fator[]) =>
     [...lista].sort((p, q) => categoria(p.base) - categoria(q.base) || (paraTexto(p.base) < paraTexto(q.base) ? -1 : paraTexto(p.base) > paraTexto(q.base) ? 1 : 0)).map(montar);
@@ -239,6 +250,22 @@ function monomio(e: Expr): Expr {
 // ─── Frações numéricas e somas polinomiais ─────────────────────────────────────
 
 let desenvolvendo = false;
+
+/** p/q com q até 99 para um decimal que é fração (0,333… → 1/3); null para o resto. */
+function comoFracao(v: number): [number, number] | null {
+  for (let q = 2; q <= 99; q++) {
+    const p = Math.round(v * q);
+    if (Math.abs(p - v * q) <= 1e-9 * q) return [p, q];
+  }
+  return null;
+}
+
+/** Tira o resíduo de ponto flutuante de uma soma de frações: 1/3 + 2/3 = 1, e não 0,9999… */
+function arredondarFracao(v: number): number {
+  if (Math.abs(v - Math.round(v)) <= 1e-12) return Math.round(v);
+  const fr = comoFracao(v);
+  return fr ? fr[0] / fr[1] : v;
+}
 
 /** Número racional escrito como 3, −2 ou 2/3 (com inteiros); null para o resto. */
 function fracaoDe(e: Expr): [number, number] | null {

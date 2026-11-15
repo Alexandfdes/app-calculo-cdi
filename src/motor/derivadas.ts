@@ -6,6 +6,7 @@
  */
 import {
   ErroDeEntrada,
+  avaliar,
   contem,
   derivada,
   div,
@@ -118,6 +119,7 @@ function aplicarRegra(e: Expr, x: string): { regra: Regra; expansao: Expr } {
       const { base, exp } = e;
       if (!depende(exp)) return comCadeia(base, mul(exp, pot(base, sub(exp, num(1)))), 'potência'); // n·uⁿ⁻¹
       if (!depende(base)) {
+        if (!(avaliar(base) > 0)) throw new ErroDeEntrada(`Na exponencial aˣ a base precisa ser positiva, e aqui ela é ${paraTexto(base)}.`);
         const externa = base.tipo === 'const' && base.nome === 'e' ? e : mul(e, func('ln', base)); // aᵘ·ln a
         return comCadeia(exp, externa, 'função elementar');
       }

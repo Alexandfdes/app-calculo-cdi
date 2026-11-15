@@ -409,7 +409,12 @@ export function avaliar(e: Expr, valores: Record<string, number> = {}): number {
     case 'div':
       return real(avaliar(e.a, valores) / avaliar(e.b, valores));
     case 'pot':
-      return real(potenciaReal(avaliar(e.base, valores), avaliar(e.exp, valores)));
+      // raiz de índice ímpar só com expoente fixo (x^(1/3)); em aˣ e xˣ a base negativa não dá função real
+      return real(
+        Number.isNaN(avaliar(e.exp))
+          ? avaliar(e.base, valores) ** avaliar(e.exp, valores)
+          : potenciaReal(avaliar(e.base, valores), avaliar(e.exp, valores)),
+      );
     case 'neg':
       return -avaliar(e.a, valores);
     case 'func':
