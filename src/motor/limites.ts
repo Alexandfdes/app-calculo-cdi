@@ -13,7 +13,7 @@
  */
 import { isConditionalNode, isOperatorNode, isParenthesisNode, isSymbolNode, parse } from 'mathjs';
 import type { MathNode } from 'mathjs';
-import { E, ErroDeEntrada, PI, avaliar, contem, div, func, iguais, lerExpressao, mul, neg, num, paraTexto, pot, soma, sub, trocar, variavel } from './expressao';
+import { E, ErroDeEntrada, PI, avaliar, contem, div, fracaoDeIndiceImpar, func, iguais, lerExpressao, mul, neg, num, paraTexto, pot, potenciaReal, soma, sub, trocar, variavel } from './expressao';
 import type { Expr, NomeFuncao } from './expressao';
 import { numeroParaLer } from './numeros';
 import { comoPolinomio, dividirPorRaiz, grau, lider, paraExpr, zeraEm } from './polinomios';
@@ -437,14 +437,17 @@ function potencia(base: Expr, exp: Expr, alvo: Alvo, ctx: Contexto): Valor {
     if (problema(b)) return b;
     if (b.tipo === 'finito') {
       if (b.v === 0 && n < 0) return quociente(num(1), pot(base, num(-n)), alvo, ctx);
-      if (b.v === 0 && !Number.isInteger(n) && sinalPerto(base, alvo, x) < 0) return { tipo: 'sem valor' };
-      return finito(b.v ** n);
+      // raiz de índice par (√, x^0,3…) não existe à esquerda de 0; a de índice ímpar (∛) existe
+      const impar = fracaoDeIndiceImpar(n);
+      if (b.v === 0 && !impar && sinalPerto(base, alvo, x) < 0) return { tipo: 'sem valor' };
+      return finito(potenciaReal(b.v, n));
     }
     if (b.tipo === 'infinito') {
       if (n === 0) return finito(1);
       if (n < 0) return finito(0);
       if (b.sinal > 0) return infinito(1);
-      if (Number.isInteger(n)) return infinito(n % 2 === 0 ? 1 : -1);
+      const impar = fracaoDeIndiceImpar(n);
+      if (impar) return infinito(impar.p % 2 === 0 ? 1 : -1);
       return { tipo: 'sem valor' };
     }
     return n > 0 ? { tipo: 'oscila', limitada: b.tipo === 'oscila' && b.limitada } : indeterminada('oscilação com expoente negativo');

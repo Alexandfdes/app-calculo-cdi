@@ -221,3 +221,18 @@ describe('Limites que antes ficavam sem técnica', () => {
     expect(() => calcularLimite('sqrt(x^2 + x) + x', '-inf')).toThrow(ErroDeEntrada);
   });
 });
+
+describe('Raiz de índice ímpar existe para x negativo', () => {
+  it('lim x→0 de x^(1/3) = 0, pelos dois lados', () => {
+    const r = calcularLimite('x^(1/3)', '0');
+    expect([r.esquerda, r.direita, r.limite]).toEqual([0, 0, 0]);
+  });
+  it('lim x→0 de 1/x^(1/3): −∞ pela esquerda e +∞ pela direita', () => {
+    const r = calcularLimite('1/x^(1/3)', '0');
+    expect([r.esquerda, r.direita, r.limite]).toEqual(['-∞', '+∞', 'não existe']);
+  });
+  it('lim x→−8 de x^(1/3) = −2 e lim x→−∞ de x^(1/3) = −∞', () => {
+    expect(calcularLimite('x^(1/3)', '-8').limite as number).toBeCloseTo(-2, 12);
+    expect(calcularLimite('x^(1/3)', '-inf').limite).toBe('-∞');
+  });
+});

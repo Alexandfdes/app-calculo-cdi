@@ -172,6 +172,19 @@ describe('Substituição com uma constante escondida em g′(x)', () => {
   });
 });
 
+describe('Raiz de índice ímpar na integral definida', () => {
+  it('∫ de −1 a 1 de x^(1/3) = 0, e ∫ de 0 a 2 de (x − 1)^(1/3) = 0', () => {
+    expect(integralDefinida('x^(1/3)', '-1', '1').valor as number).toBeCloseTo(0, 12);
+    expect(integralDefinida('(x - 1)^(1/3)', '0', '2').valor as number).toBeCloseTo(0, 12);
+  });
+  it('∫ de −8 a −1 de x^(1/3) = −45/4', () => {
+    expect(integralDefinida('x^(1/3)', '-8', '-1').valor as number).toBeCloseTo(-45 / 4, 12);
+  });
+  it('raiz de índice par continua sem valor para x negativo: ∫ de −1 a 1 de x^(1/2) não existe', () => {
+    expect(() => integralDefinida('x^(1/2)', '-1', '1')).toThrow(/não tem valor real/);
+  });
+});
+
 describe('Técnicas fora do projeto: o motor avisa em vez de errar', () => {
   for (const c of integraisForaDoEscopo) {
     it(`${c.id}: ∫ ${c.f} dx (${c.fonte})`, () => expect(() => integrar(c.f)).toThrow(ErroDeEntrada));

@@ -339,6 +339,28 @@ function potenciaLida(base: Expr, exp: Expr): string {
 
 // ─── Valor numérico ────────────────────────────────────────────────────────────
 
+/**
+ * Expoente racional p/q com q ímpar (1/3, 2/3, −5/7…), na forma irredutível; senão, null.
+ * São os expoentes em que bᵉ é real também para b < 0: ∛−8 = −2.
+ */
+export function fracaoDeIndiceImpar(e: number): { p: number; q: number } | null {
+  if (!Number.isFinite(e)) return null;
+  for (let q = 1; q <= 99; q += 2) {
+    const p = Math.round(e * q);
+    if (Math.abs(p - e * q) <= 1e-9 * q) return { p, q };
+  }
+  return null;
+}
+
+/** bᵉ nos reais: com b < 0 e e = p/q, q ímpar, vale (−1)ᵖ·|b|ᵉ (o JavaScript daria NaN). */
+export function potenciaReal(b: number, e: number): number {
+  if (b < 0 && !Number.isInteger(e)) {
+    const f = fracaoDeIndiceImpar(e);
+    if (f) return (f.p % 2 === 0 ? 1 : -1) * Math.abs(b) ** e;
+  }
+  return b ** e;
+}
+
 /** Só números reais finitos; o resto (divisão por zero, ln de negativo…) vira NaN. */
 const real = (v: number): number => (Number.isFinite(v) ? v : Number.NaN);
 
@@ -387,7 +409,7 @@ export function avaliar(e: Expr, valores: Record<string, number> = {}): number {
     case 'div':
       return real(avaliar(e.a, valores) / avaliar(e.b, valores));
     case 'pot':
-      return real(avaliar(e.base, valores) ** avaliar(e.exp, valores));
+      return real(potenciaReal(avaliar(e.base, valores), avaliar(e.exp, valores)));
     case 'neg':
       return -avaliar(e.a, valores);
     case 'func':

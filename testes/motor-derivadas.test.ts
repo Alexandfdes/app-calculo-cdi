@@ -64,6 +64,16 @@ describe('Potência de potência', () => {
   });
 });
 
+describe('Valor de potência com expoente fracionário', () => {
+  it('índice ímpar dá valor real para base negativa; índice par, não', () => {
+    expect(avaliar(lerExpressao('x^(1/3)'), { x: -8 })).toBeCloseTo(-2, 12);
+    expect(avaliar(lerExpressao('x^(2/3)'), { x: -8 })).toBeCloseTo(4, 12);
+    expect(avaliar(lerExpressao('x^(-1/3)'), { x: -8 })).toBeCloseTo(-0.5, 12);
+    expect(Number.isNaN(avaliar(lerExpressao('x^(1/2)'), { x: -4 }))).toBe(true);
+    expect(Number.isNaN(avaliar(lerExpressao('x^0.3'), { x: -2 }))).toBe(true);
+  });
+});
+
 describe('Passo a passo', () => {
   it("o produto aparece como no slide: (fg)' = f'g + fg'", () => {
     const [primeiro] = derivar('x^2*sen(x)').passos;
