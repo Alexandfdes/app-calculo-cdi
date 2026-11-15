@@ -6,14 +6,16 @@
  * coeficientes na frente, potências da mesma base juntas, sen/cos = tg, cos/sen = cotg e
  * u^(1/2) = √u.
  */
-import { E, div, func, iguais, mul, neg, num, pot, soma, sub } from './expressao';
+import { E, contem, div, func, iguais, mul, neg, num, paraTexto, pot, soma, sub } from './expressao';
+import { comoPolinomio, paraExpr } from './polinomios';
 import type { Expr, NomeFuncao } from './expressao';
 
 /** Aplica as regras até a expressão parar de mudar. */
 export function simplificar(e: Expr): Expr {
   let atual = e;
   for (let volta = 0; volta < 50; volta++) {
-    const proxima = umaVolta(atual);
+    const umaSo = umaVolta(atual);
+    const proxima = desenvolvendo ? umaSo : desenvolverSomas(umaSo);
     if (iguais(proxima, atual)) return proxima;
     atual = proxima;
   }
@@ -64,6 +66,8 @@ function somar(a: Expr, b: Expr): Expr {
   if (vale(a, 0)) return b;
   if (vale(b, 0)) return a;
   if (ehNum(a) && ehNum(b)) return num(a.valor + b.valor);
+  const [fa, fb] = [fracaoDe(a), fracaoDe(b)];
+  if (fa && fb) return daFracao(fa[0] * fb[1] + fb[0] * fa[1], fa[1] * fb[1]); // 1/3 + 1 = 4/3
   const bOposto = oposto(b);
   if (bOposto) return subtrair(a, bOposto); // a + (−c) = a − c
   const aOposto = oposto(a);
@@ -76,6 +80,8 @@ function subtrair(a: Expr, b: Expr): Expr {
   if (vale(b, 0)) return a;
   if (vale(a, 0)) return negar(b);
   if (ehNum(a) && ehNum(b)) return num(a.valor - b.valor);
+  const [fa, fb] = [fracaoDe(a), fracaoDe(b)];
+  if (fa && fb) return daFracao(fa[0] * fb[1] - fb[0] * fa[1], fa[1] * fb[1]); // 1/3 − 1 = −2/3
   const bOposto = oposto(b);
   if (bOposto) return somar(a, bOposto); // a − (−c) = a + c
   if (iguais(a, b)) return num(0);
@@ -103,6 +109,10 @@ function potencia(base: Expr, exp: Expr): Expr {
     if (Number.isInteger(b) || !par(a) || par(a * b)) return potencia(base.base, num(a * b));
   }
   if (ehNum(exp) && exp.valor < 0) return monomio(div(num(1), potencia(base, num(-exp.valor)))); // x⁻ⁿ = 1/xⁿ
+  const f = fracaoDe(exp);
+  if (f && f[0] < 0) return monomio(div(num(1), potencia(base, daFracao(-f[0], f[1])))); // x^(−2/3) = 1/x^(2/3)
+  if (base.tipo === 'func' && base.nome === 'raiz' && ehNum(exp) && Number.isInteger(exp.valor)) return potencia(base.arg, daFracao(exp.valor, 2)); // (√u)³ = u^(3/2)
+  if (base.tipo === 'func' && base.nome === 'abs' && ehNum(exp) && Number.isInteger(exp.valor) && exp.valor % 2 === 0) return potencia(base.arg, exp); // |u|² = u²
   if (vale(exp, 0.5) || (exp.tipo === 'div' && vale(exp.a, 1) && vale(exp.b, 2))) return func('raiz', base); // u^(1/2) = √u
   return pot(base, exp);
 }
@@ -208,7 +218,9 @@ function monomio(e: Expr): Expr {
   trocarQuociente(fatores, 'cos', 'sen', 'cotg');
 
   const montar = (t: Fator): Expr => (Math.abs(t.exp) === 1 ? t.base : pot(t.base, num(Math.abs(t.exp))));
-  const ordenados = (lista: Fator[]) => [...lista].sort((p, q) => categoria(p.base) - categoria(q.base)).map(montar);
+  // dentro da mesma categoria, pela escrita: 2·cos·sen e 2·sen·cos viram o mesmo termo
+  const ordenados = (lista: Fator[]) =>
+    [...lista].sort((p, q) => categoria(p.base) - categoria(q.base) || (paraTexto(p.base) < paraTexto(q.base) ? -1 : paraTexto(p.base) > paraTexto(q.base) ? 1 : 0)).map(montar);
   const cima = ordenados(fatores.filter((t) => t.exp > 0));
   const baixo = ordenados(fatores.filter((t) => t.exp < 0));
   const produto = (lista: Expr[]): Expr => lista.reduce((acc, f) => mul(acc, f));
@@ -222,4 +234,78 @@ function monomio(e: Expr): Expr {
   if (baixo.length === 0 && coefDen === 1) return numerador;
   const denominador = baixo.length === 0 ? num(coefDen) : produto(coefDen === 1 ? baixo : [num(coefDen), ...baixo]);
   return div(numerador, denominador);
+}
+
+// ─── Frações numéricas e somas polinomiais ─────────────────────────────────────
+
+let desenvolvendo = false;
+
+/** Número racional escrito como 3, −2 ou 2/3 (com inteiros); null para o resto. */
+function fracaoDe(e: Expr): [number, number] | null {
+  if (ehNum(e)) return Number.isInteger(e.valor) ? [e.valor, 1] : null;
+  if (e.tipo === 'neg') {
+    const f = fracaoDe(e.a);
+    return f ? [-f[0], f[1]] : null;
+  }
+  if (e.tipo === 'div' && ehNum(e.a) && ehNum(e.b) && Number.isInteger(e.a.valor) && Number.isInteger(e.b.valor) && e.b.valor !== 0) {
+    return [e.a.valor, e.b.valor];
+  }
+  return null;
+}
+
+function daFracao(p: number, q: number): Expr {
+  const g = mdc(Math.abs(p), Math.abs(q)) || 1;
+  const [a, b] = [(Math.sign(q) * p) / g, Math.abs(q) / g];
+  return b === 1 ? num(a) : div(num(a), num(b));
+}
+
+/** As variáveis da expressão. */
+function variaveis(e: Expr, achadas = new Set<string>()): Set<string> {
+  if (e.tipo === 'var') achadas.add(e.nome);
+  for (const filho of Object.values(e)) if (filho && typeof filho === 'object' && 'tipo' in filho) variaveis(filho as Expr, achadas);
+  return achadas;
+}
+
+const termos = (e: Expr): number => (e.tipo === 'soma' || e.tipo === 'sub' ? termos(e.a) + termos(e.b) : 1);
+
+/**
+ * Soma que é polinômio de coeficientes inteiros vira a forma reduzida quando fica mais curta:
+ * x + 1 − x = 1, 2(x − 3) − (2x + 1) = −7, 2x(x² − 1) − 2x(x² + 1) = −4x. Quem não é polinômio
+ * (2x sen x + x² cos x), ou tem fração no coeficiente, fica como está.
+ */
+function desenvolverSomas(e: Expr): Expr {
+  const filhos = (f: Expr): Expr => {
+    switch (f.tipo) {
+      case 'soma':
+      case 'sub':
+      case 'mul':
+      case 'div':
+        return { ...f, a: desenvolverSomas(f.a), b: desenvolverSomas(f.b) };
+      case 'pot':
+        return { ...f, base: desenvolverSomas(f.base), exp: desenvolverSomas(f.exp) };
+      case 'neg':
+        return { ...f, a: desenvolverSomas(f.a) };
+      case 'func':
+        return { ...f, arg: desenvolverSomas(f.arg) };
+      default:
+        return f;
+    }
+  };
+  const r = filhos(e);
+  if (r.tipo !== 'soma' && r.tipo !== 'sub') return r;
+  const nomes = variaveis(r);
+  if (nomes.size !== 1) return r;
+  const [x] = [...nomes] as [string];
+  if (!contem(r, x)) return r;
+  const p = comoPolinomio(r, x);
+  if (!p || p.length > 13 || !p.every((c) => Number.isInteger(c))) return r;
+  // paraExpr simplifica de novo; dentro dela, as somas não são desenvolvidas outra vez
+  desenvolvendo = true;
+  let nova: Expr;
+  try {
+    nova = paraExpr(p, x);
+  } finally {
+    desenvolvendo = false;
+  }
+  return termos(nova) < termos(r) || paraTexto(nova).length < paraTexto(r).length ? nova : r;
 }

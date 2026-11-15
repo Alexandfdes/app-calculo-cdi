@@ -32,6 +32,19 @@ describe('O resultado sai simplificado (Aula 3, quadro 8: "não simplificar a ex
     ['tg(x^2 + 1)', '2*x*sec(x^2 + 1)^2'],
     ['ln(cos(x))', '-tg(x)'],
     ['sqrt(tg(x))', 'sec(x)^2/(2*sqrt(tg(x)))'],
+    // o numerador polinomial é desenvolvido e reduzido, como se faz no caderno
+    ['x/(x + 1)', '1/(x + 1)^2'],
+    ['(2*x + 1)/(x - 3)', '-7/(x - 3)^2'],
+    ['(x^2 + 1)/(x^2 - 1)', '-4*x/(x^2 - 1)^2'],
+    ['(x + 1)*(x - 1)', '2*x'],
+    // a ordem dos fatores não esconde termos iguais: sen² + cos² é constante
+    ['sen(x)^2 + cos(x)^2', '0'],
+    // expoente fracionário sai calculado
+    ['x^(1/3)', '1/(3*x^(2/3))'],
+    ['x^(2/3)', '2/(3*x^(1/3))'],
+    ['x^(3/2)', '3*sqrt(x)/2'],
+    // |u|² = u²: a derivada de ln|x| é 1/x
+    ['ln(abs(x))', '1/x'],
   ];
   for (const [f, forma] of formas) {
     it(`(${f})' = ${forma}`, () => expect(paraTexto(derivar(f).resultado)).toBe(forma));
