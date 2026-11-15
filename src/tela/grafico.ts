@@ -76,6 +76,8 @@ export type Cena =
 export interface Ouvintes {
   /** O que o ponto móvel está mostrando, em texto. */
   aoLer?: (texto: string) => void;
+  /** Onde está o ponto móvel (o x), a cada quadro em que ele é desenhado. */
+  aoMover?: (x: number) => void;
   /** Integral definida: a soma de Riemann com n retângulos. */
   aoSomar?: (n: number, soma: number) => void;
   /** Integral definida: a animação chegou à área exata (ou à divergência). */
@@ -307,6 +309,7 @@ export class Grafico {
     else if (this.calmo) alvo = meio + amplitude * 0.45;
     else alvo = meio + amplitude * Math.sin(t / 1900);
     this.xAtual = this.xAtual === null || this.calmo ? alvo : this.xAtual + (alvo - this.xAtual) * 0.14;
+    this.ouvintes.aoMover?.(this.xAtual);
     return this.xAtual;
   }
 

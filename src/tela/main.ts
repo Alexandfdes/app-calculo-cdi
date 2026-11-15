@@ -18,6 +18,8 @@ import type { FuncaoDoLimite, PassoLimite, ResultadoLimite, TecnicaLimite, Valor
 import { numeroBonito, numeroParaLer } from '../motor/numeros';
 import { iniciarConteudo } from './aulas';
 import type { Conta } from './conteudos';
+import { CenaCarro } from './cena-do-carro';
+import type { CenaDoCarro, Marco } from './cena-do-carro';
 import { escapar, formulaHTML, integralHTML, temPendencia } from './formula';
 import { Grafico, curto, somaDeRiemann } from './grafico';
 import type { Cena, Funcao, PontoDoGrafico } from './grafico';
@@ -46,7 +48,29 @@ interface Exemplo {
   janela?: [number, number];
   entradas?: number[];
   avaliar?: string;
+  /** O carro andando acima do gráfico, enquanto este exemplo estiver aberto. */
+  cena?: CenaDoCarro;
 }
+
+/** A lombada da história: 1 s de reação a 20 m/s, depois a frenagem; a lombada fica nos 62 m. */
+const LOMBADA: CenaDoCarro = {
+  tipo: 'estrada',
+  s: (t) => (t < 1 ? 20 * t : -2 * t * t + 24 * t - 2),
+  tempo: [0, 4],
+  estrada: [-6, 70],
+  marcos: [
+    { em: 20, nome: 'freia', tipo: 'marco' },
+    { em: 62, nome: 'lombada · 62 m', tipo: 'lombada' },
+  ],
+};
+/** O carro a 20 m/s, com o que houver na estrada. */
+const aVinte = (tempo: [number, number], estrada: [number, number], inicio = 0, marcos: Marco[] = []): CenaDoCarro => ({
+  tipo: 'estrada',
+  s: (t) => inicio + 20 * t,
+  tempo,
+  estrada,
+  marcos,
+});
 
 /** Exemplos tirados dos slides das Aulas 1 a 4, e o cenário do veículo. */
 const EXEMPLOS: Record<Modo, Exemplo[]> = {
@@ -56,6 +80,7 @@ const EXEMPLOS: Record<Modo, Exemplo[]> = {
     {
       f: '20',
       rotulo: '🚗 piloto automático',
+      cena: aVinte([0, 10], [-10, 210]),
       contexto: 'Com o piloto automático ligado, a velocidade do carro fica em 20 m/s (72 km/h), qualquer que seja o instante x, em segundos.',
       leitura:
         'A velocidade não depende do tempo: em qualquer instante, a saída é 20. Por isso a imagem é só {20} e o gráfico é uma reta horizontal na altura 20.',
@@ -66,6 +91,7 @@ const EXEMPLOS: Record<Modo, Exemplo[]> = {
     {
       f: '20*x',
       rotulo: '🚗 reação',
+      cena: aVinte([0, 5], [-6, 110], 0, [{ em: 62, nome: 'lombada · 62 m', tipo: 'lombada' }]),
       contexto: 'Distância, em metros, que o carro anda x segundos depois de o motorista ver a lombada, enquanto ele ainda não freou: o carro segue a 20 m/s.',
       leitura:
         'A distância é proporcional ao tempo: no 1 s de reação o carro anda 20 m; se o motorista demorasse 2 s, seriam 40 m, o dobro. A taxa a = 20 é a própria velocidade. No problema, só faz sentido x ≥ 0.',
@@ -76,6 +102,7 @@ const EXEMPLOS: Record<Modo, Exemplo[]> = {
     {
       f: '20*x + 100',
       rotulo: '🚗 posição',
+      cena: aVinte([-5, 10], [-15, 310], 100, [{ em: 0, nome: 'posto', tipo: 'marco' }]),
       contexto: 'Posição do carro na estrada, em metros a partir do posto: no instante 0 ele está no marco de 100 m e anda a 20 m/s.',
       leitura:
         'b = 100 é a posição no instante 0 (onde a reta corta o eixo y) e a = 20 é a velocidade: a cada segundo, a posição aumenta 20 m. A raiz x = −5 é o instante em que o carro passou pelo posto, 5 s antes de começarmos a contar.',
@@ -86,6 +113,7 @@ const EXEMPLOS: Record<Modo, Exemplo[]> = {
     {
       f: '-2*x^2 + 24*x - 2',
       rotulo: '🚗 frenagem',
+      cena: LOMBADA,
       contexto: 'Posição do carro, em metros desde onde o motorista viu a lombada, depois que o freio entra: ele vinha a 20 m/s e perde 4 m/s a cada segundo. x é o tempo, em segundos; o freio entra em x = 1.',
       leitura:
         'Em x = 1 o freio entra, com o carro nos 20 m; em x = 4 ele chega à lombada, nos 62 m. O vértice (6, 70) é onde ele pararia se não soltasse o freio: 8 m depois da lombada, e a imagem (−∞, 70] diz que ele nunca passaria dos 70 m. A fórmula só vale de x = 1 até a lombada.',
@@ -96,6 +124,7 @@ const EXEMPLOS: Record<Modo, Exemplo[]> = {
     {
       f: 'abs(20*x - 100)',
       rotulo: '🚗 radar',
+      cena: aVinte([0, 10], [-10, 210], 0, [{ em: 100, nome: 'radar · 100 m', tipo: 'radar' }]),
       contexto: 'Distância, em metros, entre o carro e um radar que fica 100 m à frente do ponto de partida; o carro anda a 20 m/s.',
       leitura:
         'Distância nunca é negativa: a imagem é [0, +∞). O bico do gráfico, em x = 5, é o instante em que o carro passa pelo radar (distância zero); antes ele se aproxima, depois se afasta.',
@@ -126,6 +155,7 @@ const EXEMPLOS: Record<Modo, Exemplo[]> = {
     {
       f: '0.3 - 0.3*cos(x)',
       rotulo: '🚗 roda',
+      cena: { tipo: 'roda' },
       contexto: 'Altura, em metros, da válvula do pneu depois de a roda girar x radianos. A roda tem raio de 30 cm, e a válvula começa encostada no chão.',
       leitura:
         'A altura vai de 0 (no chão) a 0.6 m (60 cm, no alto da roda): a imagem é [0, 0.6]. A cada volta completa, x aumenta 2π e a altura se repete: o período é 2π.',
@@ -144,6 +174,7 @@ const EXEMPLOS: Record<Modo, Exemplo[]> = {
       f: 'x < 1 ? 0 : -4',
       ponto: '1',
       rotulo: '🚗 aceleração',
+      cena: LOMBADA,
       contexto: 'Aceleração do carro que vê a lombada (x é o tempo, em segundos): 0 durante 1 s de reação, com o carro a 20 m/s, e −4 m/s² depois, quando o freio entra.',
       leitura:
         'No instante t = 1 s a aceleração salta de 0 para −4 m/s²: não existe um valor do qual ela se aproxime nesse instante. É o momento exato em que o freio entra.',
@@ -152,6 +183,7 @@ const EXEMPLOS: Record<Modo, Exemplo[]> = {
       f: 'x < 1 ? 20 : 24 - 4*x',
       ponto: '1',
       rotulo: '🚗 velocidade',
+      cena: LOMBADA,
       contexto: 'Velocidade do mesmo carro, em m/s: 20 durante a reação e 24 − 4t depois que o freio entra.',
       leitura:
         'A velocidade chega a 20 m/s pelos dois lados: ela não salta, mesmo com a aceleração saltando. Mas o gráfico faz uma quina em t = 1 s, porque a inclinação passa de 0 para −4: ali a velocidade não tem derivada.',
@@ -168,6 +200,7 @@ const EXEMPLOS: Record<Modo, Exemplo[]> = {
     {
       f: '-2*x^2 + 24*x - 2',
       rotulo: '🚗 frenagem',
+      cena: LOMBADA,
       contexto: 'Posição do carro durante a frenagem, em metros desde onde o motorista viu a lombada; x é o tempo, em segundos, e o freio entra em x = 1.',
       leitura:
         'A derivada da posição é a velocidade: v(t) = 24 − 4t. Em t = 1 ela vale 20 m/s, a velocidade de antes do freio; na lombada, em t = 4, vale 8 m/s (28,8 km/h). O −4 é a aceleração: o carro perde 4 m/s a cada segundo.',
@@ -184,6 +217,7 @@ const EXEMPLOS: Record<Modo, Exemplo[]> = {
     {
       f: '24 - 4*x',
       rotulo: '🚗 velocidade',
+      cena: LOMBADA,
       contexto: 'Velocidade do carro durante a frenagem, em m/s; x é o tempo, em segundos.',
       leitura:
         'A primitiva é a posição, a menos de uma constante: 24t − 2t² + C. Como o carro está nos 20 m quando o freio entra, em t = 1, a constante é −2, e volta s(t) = −2t² + 24t − 2.',
@@ -201,6 +235,7 @@ const EXEMPLOS: Record<Modo, Exemplo[]> = {
       a: '1',
       b: '4',
       rotulo: '🚗 frenagem',
+      cena: LOMBADA,
       contexto: 'Velocidade do carro durante a frenagem, em m/s, de t = 1 s, quando o freio entra, até t = 4 s, quando ele chega à lombada.',
       leitura: 'A área debaixo da velocidade é a distância andada freando: 42 m. Somados aos 20 m do 1 s de reação, dão os 62 m até a lombada.',
     },
@@ -332,10 +367,13 @@ function textoDoExemplo(m: Modo, texto: string, limites?: { a: string; b: string
 let ultimosPassos: ItemPasso[] = [];
 let aoTerminarDefinida: (() => void) | null = null;
 
+const cenaDoCarro = new CenaCarro(elemento<HTMLDivElement>('cena-carro'), elemento<HTMLCanvasElement>('canvas-carro'));
+
 const grafico = new Grafico(canvas, {
   aoLer: (texto) => {
     leitura.textContent = texto;
   },
+  aoMover: (x) => cenaDoCarro.mover(x),
   aoSomar: (n, soma) => {
     placar.hidden = false;
     placar.innerHTML = `<span>${n} ${n === 1 ? 'retângulo' : 'retângulos'}</span><strong>${escapar(curto(soma))}</strong>`;
@@ -987,6 +1025,9 @@ function mostrarErro(mensagem: string, texto: string): void {
 
 function calcular(): void {
   const texto = campo.value.trim();
+  // o carro só aparece enquanto a conta é a do exemplo 🚗 aberto
+  const e = exemploAtual;
+  cenaDoCarro.mostrar(e?.cena && e.f === texto && EXEMPLOS[modo].includes(e) ? e.cena : null);
   if (!texto) {
     mostrarErro('Digite uma função para começar, ou toque num dos exemplos.', '');
     return;

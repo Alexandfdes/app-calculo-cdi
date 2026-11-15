@@ -2447,6 +2447,22 @@ h2 {
   }
 }
 
+/* ─── O carro do exemplo, acima do gráfico da calculadora ──────────────────── */
+
+.cena-carro {
+  margin-bottom: 10px;
+  overflow: hidden;
+  border: 1px solid rgba(250, 204, 21, 0.3);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(30, 41, 79, 0.5), rgba(2, 6, 23, 0.8));
+}
+
+.cena-carro canvas {
+  display: block;
+  width: 100%;
+  height: 128px;
+}
+
 /* ─── Rodapé e telas pequenas ──────────────────────────────────────────────── */
 
 .rodape {
