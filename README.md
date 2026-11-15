@@ -46,6 +46,7 @@ Se a entrega for só por arquivo, mande o código-fonte (sem `node_modules/`) co
 - Potência com `^`: `x^3`, `x^(1/2)`. Multiplicação com `*` ou colada: `2*x`, `2x`.
 - Funções: `sen`, `cos`, `tg`, `cotg`, `sec`, `csc`, `ln`, `sqrt`, `abs`, `log(x, 10)`.
 - Constantes: `e` e `pi`. Decimais com ponto: `2.5`.
+- Na integral definida, os limites podem ser `inf` e `-inf` (integral imprópria).
 - No limite, o ponto pode ser `inf` ou `-inf`, e a função pode ser por partes: `x < 5 ? 2*x : 10 - 3*(x - 5)`.
 
 ## Organização

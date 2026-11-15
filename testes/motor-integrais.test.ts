@@ -185,6 +185,55 @@ describe('Raiz de índice ímpar na integral definida', () => {
   });
 });
 
+describe('Integral imprópria com limite infinito', () => {
+  const converge: [string, string, string, number][] = [
+    ['e^(-x)', '0', 'inf', 1],
+    ['e^x', '-inf', '0', 1],
+    ['1/x^2', '1', 'inf', 1],
+    ['1/x^3', '-inf', '-1', -1 / 2],
+    ['x*e^(-x^2)', '0', 'inf', 1 / 2],
+    ['x*e^(-x^2)', '-inf', 'inf', 0],
+    ['e^(-x)', 'inf', '0', -1],
+    ['2^(-x)', '0', '+∞', 1 / Math.log(2)],
+  ];
+  for (const [f, a, b, v] of converge) {
+    it(`∫ de ${a} a ${b} de ${f} = ${v}`, () => expect(integralDefinida(f, a, b).valor as number).toBeCloseTo(v, 10));
+  }
+  const diverge: [string, string, string][] = [
+    ['1/x', '1', 'inf'],
+    ['1/sqrt(x)', '1', 'inf'],
+    ['x', '-inf', 'inf'],
+    ['cos(x)', '0', 'inf'],
+    ['e^x', '0', 'inf'],
+    ['1/x^2', '-1', 'inf'],
+    ['1/(x - 5)^2', '0', 'inf'],
+    ['5', '0', 'inf'],
+  ];
+  for (const [f, a, b] of diverge) {
+    it(`∫ de ${a} a ${b} de ${f} diverge`, () => expect(integralDefinida(f, a, b).valor).toBe('diverge'));
+  }
+  it('singularidade que converge, mais o infinito: ∫ de 0 a ∞ de x^(-3/2) diverge em 0; ∫ de 0 a ∞ de e^(-x) passa direto', () => {
+    expect(integralDefinida('x^(-3/2)', '0', 'inf').valor).toBe('diverge');
+    expect(integralDefinida('e^(-x)', '0', 'inf').descontinuidades).toEqual([]);
+  });
+  it('o passo a passo escreve o limite de F', () => {
+    expect(descreverIntegralDefinida(integralDefinida('1/x^2', '1', 'inf'))).toEqual([
+      'Primitiva de 1/x^2: F(x) = -1/x',
+      'O intervalo [1, +∞) não tem fim: F(+∞) quer dizer o limite de F(x) com x → +∞, que é 0.',
+      'TFC: F(+∞) - F(1) = 0 - (-1) = 1',
+    ]);
+    expect(descreverIntegralDefinida(integralDefinida('1/x', '1', 'inf'))).toEqual([
+      'Primitiva de 1/x: F(x) = ln(abs(x))',
+      'O intervalo [1, +∞) não tem fim: F(+∞) quer dizer o limite de F(x) com x → +∞, que é +∞.',
+      'Esse limite não é um número: a integral imprópria diverge.',
+    ]);
+  });
+  it('com módulo, só intervalo finito; e √x de −∞ a 0 não existe', () => {
+    expect(() => integralDefinida('abs(x)', '0', 'inf')).toThrow(/intervalo finito/);
+    expect(() => integralDefinida('sqrt(x)', '-inf', '0')).toThrow(/não tem valor real/);
+  });
+});
+
 describe('Técnicas fora do projeto: o motor avisa em vez de errar', () => {
   for (const c of integraisForaDoEscopo) {
     it(`${c.id}: ∫ ${c.f} dx (${c.fonte})`, () => expect(() => integrar(c.f)).toThrow(ErroDeEntrada));

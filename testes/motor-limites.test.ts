@@ -236,3 +236,29 @@ describe('Raiz de índice ímpar existe para x negativo', () => {
     expect(calcularLimite('x^(1/3)', '-inf').limite).toBe('-∞');
   });
 });
+
+describe('0/0 com raiz de índice maior que 2: mudança de variável', () => {
+  const casos: [string, number, number][] = [
+    ['(x - 8)/(x^(1/3) - 2)', 8, 12],
+    ['(x^(1/3) - 1)/(x - 1)', 1, 1 / 3],
+    ['(x^(1/3) + 2)/(x + 8)', -8, 1 / 12],
+    ['(x^(1/4) - 1)/(x - 1)', 1, 1 / 4],
+    ['(x^(1/2) - 1)/(x^(1/3) - 1)', 1, 3 / 2],
+    ['(x^(2/3) - 4)/(x - 8)', 8, 1 / 3],
+  ];
+  for (const [f, a, esperado] of casos) {
+    it(`lim ${f} com x → ${a} = ${esperado}`, () => {
+      const r = calcularLimite(f, a);
+      expect(r.limite as number).toBeCloseTo(esperado, 10);
+      expect(tecnicas(f, a)).toContain('mudança de variável');
+    });
+  }
+  it('lim x→0 de x^(1/3)/x = +∞ pelos dois lados', () => {
+    const r = calcularLimite('x^(1/3)/x', 0);
+    expect([r.esquerda, r.direita, r.limite]).toEqual(['+∞', '+∞', '+∞']);
+  });
+  it('com √x, a racionalização da aula continua sendo a técnica', () => {
+    expect(tecnicas('(sqrt(x) - 2)/(x - 4)', 4)).toContain('racionalização');
+    expect(tecnicas('(sqrt(x) - 2)/(x - 4)', 4)).not.toContain('mudança de variável');
+  });
+});

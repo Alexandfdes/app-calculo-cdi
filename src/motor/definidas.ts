@@ -17,6 +17,8 @@ import { ErroDeEntrada, avaliar, contem, func, lerExpressao, num, paraTexto } fr
 import type { Expr } from './expressao';
 import { integrar } from './integrais';
 import type { ResultadoIntegral } from './integrais';
+import { calcularLimite, lerPonto } from './limites';
+import type { ValorLimite } from './limites';
 import { numeroBonito } from './numeros';
 
 export interface ResultadoIntegralDefinida {
@@ -30,6 +32,11 @@ export interface ResultadoIntegralDefinida {
   /** Só com |f|: onde f troca de sinal e o intervalo foi cortado. */
   cortes: number[];
   valor: number | 'diverge';
+  /**
+   * Só com limite de integração infinito: o limite de F em cada ponta (a, b), ou null na ponta finita.
+   * A integral converge quando os dois são números.
+   */
+  noInfinito?: [ValorLimite | 'não existe' | null, ValorLimite | 'não existe' | null];
 }
 
 /** Distância abaixo da qual dois pontos são o mesmo; também a vizinhança de um ponto sem valor. */
@@ -37,7 +44,10 @@ const FOLGA = 1e-6;
 /** Em quantas partes o intervalo é dividido na busca de zeros. */
 const DIVISOES = 4000;
 
-/** Limites como número (0, Math.PI) ou como texto ("0", "pi", "2*pi", "e"). */
+/** Até onde, a partir da ponta finita, o motor procura descontinuidades num intervalo sem fim. */
+const ALCANCE = [40.37, 400.11];
+
+/** Limites como número (0, Math.PI) ou como texto ("0", "pi", "2*pi", "e", "inf", "-inf"). */
 export function integralDefinida(
   entrada: string | Expr,
   a: number | string,
@@ -52,9 +62,11 @@ export function integralDefinida(
   const g = f.tipo === 'func' && f.nome === 'abs' ? f.arg : f;
   const primitiva = integrar(g, x);
   const F = (t: number): number => avaliar(primitiva.resultado, { [x]: t });
-  const descontinuidades = pontosSemValor(g, x, lo, hi);
-  exigirValor(g, x, lo, hi, descontinuidades);
-  const comum = { entrada: f, a: exprA, b: exprB, primitiva, descontinuidades };
+  const semFim = !Number.isFinite(lo) || !Number.isFinite(hi);
+  if (semFim && comModulo) throw new ErroDeEntrada('Com módulo, o motor só calcula a área num intervalo finito.');
+  const descontinuidades = unicos(janelas(lo, hi).flatMap(([p, q, pontas]) => pontosSemValor(g, x, p, q, pontas)));
+  for (const [p, q] of janelas(lo, hi)) exigirValor(g, x, p, q, descontinuidades);
+  const comum = { entrada: f, a: exprA, b: exprB, primitiva, descontinuidades: semFim ? descontinuidades.slice(0, 6) : descontinuidades };
 
   if (comModulo) {
     if (descontinuidades.length > 0) {
@@ -68,6 +80,14 @@ export function integralDefinida(
 
   const explode = descontinuidades.some((c) => pontosSemValor(primitiva.resultado, x, c - FOLGA, c + FOLGA).length > 0);
   if (explode) return { ...comum, cortes: [], valor: 'diverge' };
+  if (semFim) {
+    // integral imprópria: F(±∞) é o limite de F
+    const naPonta = (v: number): ValorLimite | 'não existe' | null => (Number.isFinite(v) ? null : limiteDaPrimitiva(primitiva.resultado, v, x));
+    const noInfinito: [ValorLimite | 'não existe' | null, ValorLimite | 'não existe' | null] = [naPonta(va), naPonta(vb)];
+    const [Fa, Fb] = [noInfinito[0] ?? F(va), noInfinito[1] ?? F(vb)];
+    const converge = typeof Fa === 'number' && typeof Fb === 'number';
+    return { ...comum, cortes: [], noInfinito, valor: converge ? Fb - Fa : 'diverge' };
+  }
   const valor = F(vb) - F(va);
   if (Number.isNaN(valor)) {
     throw new ErroDeEntrada(`Não consegui calcular F(b) − F(a) com F(${x}) = ${paraTexto(primitiva.resultado)}.`);
@@ -85,6 +105,28 @@ export function descreverIntegralDefinida(r: ResultadoIntegralDefinida): string[
   const F = (t: number): number => avaliar(r.primitiva.resultado, { [x]: t });
   const linhas = [`Primitiva de ${g}: F(${x}) = ${paraTexto(r.primitiva.resultado)}`];
   const pontos = (lista: number[]): string => lista.map(numeroBonito).join(', ');
+
+  if (r.noInfinito) {
+    const [lo, hi] = va <= vb ? [va, vb] : [vb, va];
+    const intervaloAberto = `${Number.isFinite(lo) ? '[' : '('}${ponta(lo)}, ${ponta(hi)}${Number.isFinite(hi) ? ']' : ')'}`;
+    const limites = [va, vb]
+      .map((v, i) => [v, r.noInfinito![i]] as const)
+      .filter(([v]) => !Number.isFinite(v))
+      .map(([v, L]) => `F(${ponta(v)}) quer dizer o limite de F(${x}) com ${x} → ${ponta(v)}, que ${typeof L === 'number' || L === '+∞' || L === '-∞' ? `é ${valorNoInfinito(L)}` : 'não existe'}`);
+    linhas.push(`O intervalo ${intervaloAberto} não tem fim: ${limites.join('; ')}.`);
+    if (r.descontinuidades.length > 0 && r.valor !== 'diverge') {
+      linhas.push(`${f} não existe em ${x} = ${pontos(r.descontinuidades)}, mas F tem valor aí: essa parte converge.`);
+    }
+    if (r.valor === 'diverge') {
+      linhas.push('Esse limite não é um número: a integral imprópria diverge.');
+      return linhas;
+    }
+    const valorEm = (v: number, i: 0 | 1): number => (Number.isFinite(v) ? F(v) : (r.noInfinito![i] as number));
+    const [Fa, Fb] = [valorEm(va, 0), valorEm(vb, 1)];
+    const subtraendo = Fa < 0 ? `(${numeroBonito(Fa)})` : numeroBonito(Fa);
+    linhas.push(`TFC: F(${ponta(vb)}) - F(${ponta(va)}) = ${numeroBonito(Fb)} - ${subtraendo} = ${numeroBonito(r.valor)}`);
+    return linhas;
+  }
 
   if (r.valor === 'diverge') {
     linhas.push(`${f} não existe em ${x} = ${pontos(r.descontinuidades)}, dentro de ${intervalo}: o TFC pede f contínua em [a, b].`);
@@ -113,20 +155,44 @@ export function descreverIntegralDefinida(r: ResultadoIntegralDefinida): string[
 // ─── Limites, continuidade e zeros ─────────────────────────────────────────────
 
 function limiteDeIntegracao(limite: number | string, x: string): [Expr, number] {
+  if (typeof limite === 'string' && limite.trim() !== '') {
+    const { a } = lerPonto(limite, x);
+    if (!Number.isFinite(a)) return [num(a), a];
+  }
   const expr = typeof limite === 'number' ? num(limite) : lerExpressao(limite, x);
   if (contem(expr, x)) throw new ErroDeEntrada(`O limite de integração não pode depender de ${x}.`);
   const valor = avaliar(expr);
-  if (!Number.isFinite(valor)) {
-    throw new ErroDeEntrada('O limite de integração precisa ser um número real; integrais até o infinito ficam de fora.');
-  }
+  if (Number.isNaN(valor)) throw new ErroDeEntrada('O limite de integração precisa ser um número real, inf ou -inf.');
   return [expr, valor];
 }
 
+/**
+ * Os trechos onde procurar descontinuidades. Num intervalo sem fim, a busca vai até ALCANCE da
+ * ponta finita (ou de 0). O terceiro item diz quais pontas são do intervalo de verdade: só nelas
+ * um valor minúsculo conta como zero (e^x em −40 é pequeno, mas não é zero).
+ */
+function janelas(lo: number, hi: number): [number, number, [boolean, boolean]][] {
+  if (Number.isFinite(lo) && Number.isFinite(hi)) return [[lo, hi, [true, true]]];
+  const [perto, longe] = [ALCANCE[0]!, ALCANCE[1]!];
+  if (Number.isFinite(lo)) return [[lo, lo + perto, [true, false]], [lo + perto, lo + longe, [false, false]]];
+  if (Number.isFinite(hi)) return [[hi - longe, hi - perto, [false, false]], [hi - perto, hi, [false, true]]];
+  return [[-longe, -perto, [false, false]], [-perto, perto, [false, false]], [perto, longe, [false, false]]];
+}
+
+/** O limite de F no infinito; recusa quando o motor de limites não resolve. */
+function limiteDaPrimitiva(F: Expr, infinito: number, x: string): ValorLimite | 'não existe' {
+  try {
+    return calcularLimite(F, infinito, x).limite;
+  } catch {
+    throw new ErroDeEntrada(`Não consegui calcular o limite de F(${x}) = ${paraTexto(F)} com ${x} → ${ponta(infinito)}, que a integral imprópria pede.`);
+  }
+}
+
 /** Pontos de [lo, hi] onde e não existe: zeros de denominadores, de cos(u) em tg e sec, de sen(u) em cotg e csc, do argumento do ln. */
-function pontosSemValor(e: Expr, v: string, lo: number, hi: number): number[] {
+function pontosSemValor(e: Expr, v: string, lo: number, hi: number, pontas: [boolean, boolean] = [true, true]): number[] {
   const pontos: number[] = [];
   const zerosDe = (h: Expr): void => {
-    if (contem(h, v)) pontos.push(...zeros((t) => avaliar(h, { [v]: t }), lo, hi));
+    if (contem(h, v)) pontos.push(...zeros((t) => avaliar(h, { [v]: t }), lo, hi, pontas));
   };
   const visitar = (n: Expr): void => {
     switch (n.tipo) {
@@ -186,11 +252,11 @@ function exigirValor(e: Expr, v: string, lo: number, hi: number, excecoes: numbe
  * dois lados, então o zero ali é reconhecido pelo tamanho do valor: em ponto flutuante cos(π/2)
  * dá 6·10⁻¹⁷, e não 0. Sem isso, ∫ de 0 a π/2 de tg x saía 37,33 em vez de divergir.
  */
-function zeros(h: (t: number) => number, lo: number, hi: number): number[] {
+function zeros(h: (t: number) => number, lo: number, hi: number, pontas: [boolean, boolean] = [true, true]): number[] {
   const xs = Array.from({ length: DIVISOES + 1 }, (_, i) => (i === DIVISOES ? hi : lo + ((hi - lo) * i) / DIVISOES));
   const ys = xs.map(h);
   const escala = ys.reduce((maior, y) => (Number.isFinite(y) ? Math.max(maior, Math.abs(y)) : maior), 0);
-  const pontaZerada = (i: number, y: number): boolean => (i === 0 || i === xs.length - 1) && Math.abs(y) <= 1e-12 * Math.max(1, escala);
+  const pontaZerada = (i: number, y: number): boolean => ((i === 0 && pontas[0]) || (i === xs.length - 1 && pontas[1])) && Math.abs(y) <= 1e-12 * Math.max(1, escala);
   const achados: number[] = [];
   for (let i = 0; i < xs.length; i++) {
     const t = xs[i]!;
@@ -250,3 +316,7 @@ function unicos(pontos: number[]): number[] {
 // ─── Texto ─────────────────────────────────────────────────────────────────────
 
 const textoDoLimite = (e: Expr): string => (e.tipo === 'num' ? numeroBonito(e.valor) : paraTexto(e));
+
+/** Uma ponta do intervalo: número, +∞ ou −∞. */
+const ponta = (v: number): string => (Number.isFinite(v) ? numeroBonito(v) : v > 0 ? '+∞' : '−∞');
+const valorNoInfinito = (L: ValorLimite | 'não existe'): string => (typeof L === 'number' ? numeroBonito(L) : L === '-∞' ? '−∞' : L);

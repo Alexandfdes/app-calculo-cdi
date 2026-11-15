@@ -38,7 +38,8 @@ export type TecnicaLimite =
   | 'limite no infinito'
   | 'limites laterais'
   | 'continuidade'
-  | 'ordem de crescimento';
+  | 'ordem de crescimento'
+  | 'mudança de variável';
 
 export interface PassoLimite {
   tecnica: TecnicaLimite;
@@ -570,6 +571,7 @@ function zeroSobreZero(N: Expr, D: Expr, alvo: Alvo, ctx: Contexto): Valor {
     limiteFundamental(N, D, alvo, ctx) ??
     fatoracao(N, D, alvo, ctx) ??
     racionalizacao(N, D, alvo, ctx) ??
+    mudancaDeVariavel(N, D, alvo, ctx) ??
     porEquivalentes(N, D, alvo, ctx) ??
     semModulo(div(N, D), alvo, ctx) ??
     indeterminada('0/0')
@@ -610,7 +612,7 @@ function fatoracao(N: Expr, D: Expr, alvo: Alvo, ctx: Contexto): Valor | null {
   const reduzida = ehUm(Q) ? P : div(P, Q);
   registrar(ctx, 'fatoração', `Fatoração (quadro 5): ${paraTexto(fator)} aparece em cima e embaixo e se cancela.`, [
     div(N, D),
-    div(mul(fator, P), ehUm(Q) ? fator : mul(fator, Q)),
+    div(ehUm(P) ? fator : mul(fator, P), ehUm(Q) ? fator : mul(fator, Q)),
     reduzida,
   ]);
   return limite(reduzida, alvo, ctx);
@@ -655,6 +657,87 @@ function racionalizacao(N: Expr, D: Expr, alvo: Alvo, ctx: Contexto): Valor | nu
     return limite(reduzida, alvo, ctx);
   }
   return null;
+}
+
+// ─── 0/0 com raiz de índice qualquer: mudança de variável ──────────────────────
+
+/** p/q de um expoente escrito como fração de inteiros (1/3, 2/3) ou como decimal exato (0.5); null para o resto. */
+function expoenteRacional(e: Expr): [number, number] | null {
+  if (e.tipo === 'div' && e.a.tipo === 'num' && e.b.tipo === 'num' && Number.isInteger(e.a.valor) && Number.isInteger(e.b.valor) && e.b.valor > 0) {
+    return [e.a.valor, e.b.valor];
+  }
+  if (e.tipo === 'num') {
+    for (let q = 1; q <= 12; q++) if (Number.isInteger(e.valor * q)) return [e.valor * q, q];
+  }
+  return null;
+}
+
+const mdcInteiro = (a: number, b: number): number => (b === 0 ? Math.abs(a) : mdcInteiro(b, a % b));
+
+/** Os índices das raízes de x na expressão: 3 em x^(1/3), 2 em √x. Null se x aparece dentro de outra raiz. */
+function indicesDasRaizes(e: Expr, x: string, achados: number[] = []): number[] | null {
+  const ehX = (t: Expr): boolean => t.tipo === 'var' && t.nome === x;
+  if (e.tipo === 'pot' && ehX(e.base) && !contem(e.exp, x)) {
+    const f = expoenteRacional(e.exp);
+    if (!f) return null;
+    achados.push(f[1] / mdcInteiro(f[0], f[1]));
+    return achados;
+  }
+  if (e.tipo === 'func' && e.nome === 'raiz') {
+    if (!ehX(e.arg)) return contem(e.arg, x) ? null : achados;
+    achados.push(2);
+    return achados;
+  }
+  if (e.tipo === 'pot' && contem(e.base, x) && !contem(e.exp, x) && !Number.isInteger(avaliar(e.exp))) return null; // (x + 1)^(1/3)
+  let certo = true;
+  mapearFilhos(e, (t) => {
+    if (indicesDasRaizes(t, x, achados) === null) certo = false;
+    return t;
+  });
+  return certo ? achados : null;
+}
+
+/** Troca x por uᵐ: x^(p/q) vira u^(pm/q), √x vira u^(m/2). */
+function trocarPorPotencia(e: Expr, x: string, u: Expr, m: number): Expr {
+  const ehX = (t: Expr): boolean => t.tipo === 'var' && t.nome === x;
+  if (ehX(e)) return pot(u, num(m));
+  if (e.tipo === 'pot' && ehX(e.base)) {
+    const f = expoenteRacional(e.exp);
+    if (f) return pot(u, num(Math.round((f[0] * m) / f[1])));
+  }
+  if (e.tipo === 'func' && e.nome === 'raiz' && ehX(e.arg)) return pot(u, num(m / 2));
+  return mapearFilhos(e, (t) => trocarPorPotencia(t, x, u, m));
+}
+
+/**
+ * Mudança de variável: com u = x^(1/m), as raízes somem e sobra uma razão de polinômios em u,
+ * que a fatoração resolve. (x − 8)/(∛x − 2), com u = ∛x, vira (u³ − 8)/(u − 2).
+ */
+function mudancaDeVariavel(N: Expr, D: Expr, alvo: Alvo, ctx: Contexto): Valor | null {
+  if (!('a' in alvo)) return null;
+  const { x } = ctx;
+  const indices = indicesDasRaizes(div(N, D), x);
+  if (!indices || indices.every((q) => q === 1)) return null;
+  const m = indices.reduce((acc, q) => (acc * q) / mdcInteiro(acc, q), 1);
+  if (m > 12) return null;
+  // raiz de índice par só existe para x ≥ 0
+  if (m % 2 === 0 && (alvo.a < 0 || (alvo.a === 0 && alvo.lado < 0))) return null;
+  const nome = x === 'u' ? 'w' : 'u';
+  const u = variavel(nome);
+  const bruto = potenciaReal(alvo.a, 1 / m);
+  const b = Math.abs(bruto - Math.round(bruto)) < 1e-9 ? Math.round(bruto) : bruto;
+  const [N2, D2] = [simplificar(trocarPorPotencia(N, x, u, m)), simplificar(trocarPorPotencia(D, x, u, m))];
+  if (!comoPolinomio(N2, nome) || !comoPolinomio(D2, nome)) return null;
+  const raiz = m === 2 ? `√${x}` : `${x}^(1/${m})`;
+  registrar(
+    ctx,
+    'mudança de variável',
+    `Mudança de variável: com ${nome} = ${raiz}, ${x} = ${nome}^${m} e as raízes somem. Quando ${x} → ${bonito(alvo.a)}, ${nome} → ${bonito(b)}.`,
+    [div(N, D), div(N2, D2)],
+  );
+  // ponto sem raiz exata (x → 2 com ∛x): o fator aparece como u − 2^(1/3), e não u − 1,2599…
+  const ponto = Number.isInteger(b) ? null : pot(ctx.ponto ?? num(alvo.a), div(num(1), num(m)));
+  return limite(div(N2, D2), { a: b, lado: alvo.lado }, { ...ctx, x: nome, ponto });
 }
 
 /** Módulo: de cada lado, |u| com u → 0 vira u ou −u, conforme o sinal de u desse lado. */

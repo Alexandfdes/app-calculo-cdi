@@ -23,7 +23,7 @@ import { Grafico, curto, somaDeRiemann } from './grafico';
 import type { Cena, Funcao, PontoDoGrafico } from './grafico';
 
 type Modo = 'funcao' | 'limite' | 'derivada' | 'integral' | 'definida';
-type Etiqueta = Regra | RegraIntegral | TecnicaLimite | TipoFuncao | AspectoFuncao | 'primitiva' | 'tfc' | 'módulo' | 'descontinuidade';
+type Etiqueta = Regra | RegraIntegral | TecnicaLimite | TipoFuncao | AspectoFuncao | 'primitiva' | 'tfc' | 'módulo' | 'descontinuidade' | 'imprópria';
 
 interface ItemPasso {
   etiqueta: Etiqueta;
@@ -195,6 +195,7 @@ const EXEMPLOS: Record<Modo, Exemplo[]> = {
     { f: 'abs(sen(x))', a: '0', b: '2*pi' },
     { f: '1/x', a: '1', b: 'e' },
     { f: '1/x^2', a: '-1', b: '1' },
+    { f: 'e^(-x)', a: '0', b: 'inf' },
     {
       f: '24 - 4*x',
       a: '1',
@@ -225,6 +226,7 @@ const ETIQUETAS: Record<Etiqueta, { nome: string; cor: string }> = {
   tfc: { nome: 'Teorema Fundamental', cor: '#facc15' },
   módulo: { nome: 'Módulo', cor: '#38bdf8' },
   descontinuidade: { nome: 'Descontinuidade', cor: '#fb7185' },
+  imprópria: { nome: 'Integral imprópria', cor: '#fb923c' },
   'substituição direta': { nome: 'Substituição direta', cor: '#4ade80' },
   'por partes': { nome: 'Por partes', cor: '#facc15' },
   'forma indeterminada': { nome: 'Forma indeterminada', cor: '#94a3b8' },
@@ -237,6 +239,7 @@ const ETIQUETAS: Record<Etiqueta, { nome: string; cor: string }> = {
   'limite no infinito': { nome: 'Limite no infinito', cor: '#60a5fa' },
   'limites laterais': { nome: 'Limites laterais', cor: '#38bdf8' },
   continuidade: { nome: 'Continuidade', cor: '#facc15' },
+  'mudança de variável': { nome: 'Mudança de variável', cor: '#c084fc' },
   'ordem de crescimento': { nome: 'Ordem de crescimento', cor: '#4ade80' },
   linear: { nome: 'Linear', cor: '#60a5fa' },
   afim: { nome: 'Afim', cor: '#38bdf8' },
@@ -453,9 +456,15 @@ function conferirIntegral(f: Expr, F: Expr): string {
     : 'Atenção: derivando F(x) não voltou a f(x) em todos os pontos.';
 }
 
+/** +∞, −∞ ou o número: uma ponta do intervalo de integração. */
+const pontaDoIntervalo = (v: number): string => (Number.isFinite(v) ? bonito(v) : v > 0 ? '+∞' : '−∞');
+/** O limite de integração como fórmula; no infinito, o símbolo. */
+const limiteHTML = (e: Expr): string => (e.tipo === 'num' && !Number.isFinite(e.valor) ? escapar(pontaDoIntervalo(e.valor)) : formulaHTML(e));
+
 /** A integral definida conferida por uma soma de Riemann bem fina. */
 function conferirDefinida(r: ResultadoIntegralDefinida, a: number, b: number): string {
   if (r.valor === 'diverge') return '';
+  if (r.noInfinito) return 'Integral imprópria: o intervalo não tem fim, então o valor é um limite de F, e não dá para conferir com um número finito de retângulos.';
   const soma = somaDeRiemann(avaliador(r.entrada), a, b, 4000);
   if (!Number.isFinite(soma)) return '';
   const bate = Math.abs(soma - r.valor) <= 1e-3 * Math.max(1, Math.abs(r.valor));
@@ -499,6 +508,24 @@ function passosDaDefinida(r: ResultadoIntegralDefinida, a: number, b: number): I
       etiqueta: 'descontinuidade',
       html: `<span class="texto">f não existe em ${X} = ${escapar(pontos)}, dentro de ${escapar(intervalo)}, e o TFC pede f contínua em [a, b]. ${fim}</span>`,
     });
+  }
+  if (r.noInfinito) {
+    const quanto = (L: (typeof r.noInfinito)[number]): string => (typeof L === 'number' ? bonito(L) : L === '-∞' ? '−∞' : (L ?? ''));
+    const limites = ([a, b] as const)
+      .map((v, i) => [v, r.noInfinito![i as 0 | 1]] as const)
+      .filter(([v]) => !Number.isFinite(v))
+      .map(([v, L]) => `F(${pontaDoIntervalo(v)}) é o limite de F(${X}) com ${X} → ${pontaDoIntervalo(v)}, que ${L === 'oscila' || L === 'não existe' || L === 'sem valor' ? 'não existe' : `vale ${quanto(L)}`}`);
+    const fim = r.valor === 'diverge' ? ' Esse limite não é um número: a integral imprópria <strong>diverge</strong>.' : '';
+    itens.push({ etiqueta: 'imprópria', html: `<span class="texto">O intervalo não tem fim: ${escapar(limites.join('; '))}.${fim}</span>` });
+    if (r.valor === 'diverge') return itens;
+    const Fde = (v: number, i: 0 | 1): number => (Number.isFinite(v) ? avaliador(F)(v) : (r.noInfinito![i] as number));
+    const [Fa, Fb] = [Fde(a, 0), Fde(b, 1)];
+    const subtraendo = Fa < 0 ? `(${escapar(bonito(Fa))})` : escapar(bonito(Fa));
+    itens.push({
+      etiqueta: 'tfc',
+      html: `F(${limiteHTML(r.b)})<span class="op">−</span>F(${limiteHTML(r.a)})${IGUAL}${escapar(bonito(Fb))}<span class="op">−</span>${subtraendo}${IGUAL}${escapar(bonito(r.valor))}`,
+    });
+    return itens;
   }
   if (r.valor === 'diverge') return itens;
   const Fx = avaliador(F);
@@ -613,6 +640,9 @@ function mostrarIntegral(texto: string): void {
 function mostrarDefinida(texto: string): void {
   const r = integralDefinida(texto, campoA.value.trim() || '0', campoB.value.trim() || '1');
   const [a, b] = [avaliar(r.a), avaliar(r.b)];
+  // no gráfico, o intervalo sem fim aparece cortado: 8 unidades a partir da ponta finita
+  const [ga, gb] = Number.isFinite(a) && Number.isFinite(b) ? [a, b] : !Number.isFinite(a) && !Number.isFinite(b) ? [Math.sign(a) * 6, Math.sign(b) * 6] : Number.isFinite(a) ? [a, a + Math.sign(b) * 8] : [b + Math.sign(a) * 8, b];
+  const rotulo = (v: number): string => (Number.isFinite(v) ? bonito(v) : v > 0 ? '+∞ (segue)' : '−∞ (segue)');
   const diverge = r.valor === 'diverge';
   const valor = typeof r.valor === 'number' ? r.valor : Number.NaN;
   const final = diverge
@@ -620,8 +650,8 @@ function mostrarDefinida(texto: string): void {
     : `<span class="valor" aria-hidden="true">${escapar(bonito(valor))}</span><span class="so-leitor">${escapar(bonito(valor))}</span>`;
   mostrarResultado(
     'Integral definida',
-    `${integralHTML(r.entrada, 'x', { a: formulaHTML(r.a), b: formulaHTML(r.b) })}${IGUAL}${final}`,
-    diverge ? ['descontinuidade'] : ['tfc', ...r.primitiva.regrasUsadas],
+    `${integralHTML(r.entrada, 'x', { a: limiteHTML(r.a), b: limiteHTML(r.b) })}${IGUAL}${final}`,
+    diverge ? [r.noInfinito ? 'imprópria' : 'descontinuidade'] : [...(r.noInfinito ? (['imprópria'] as const) : []), 'tfc', ...r.primitiva.regrasUsadas],
     conferirDefinida(r, a, b),
     textoDoExemplo('definida', texto, { a: campoA.value.trim(), b: campoB.value.trim() }),
   );
@@ -631,20 +661,20 @@ function mostrarDefinida(texto: string): void {
     placar.hidden = false;
     placar.innerHTML = diverge
       ? '<span>as somas crescem sem parar</span><strong class="diverge">diverge</strong>'
-      : `<span>área exata pelo TFC</span><strong>${escapar(bonito(valor))}</strong>`;
+      : `<span>${r.noInfinito ? 'área até o infinito' : 'área exata pelo TFC'}</span><strong>${escapar(bonito(valor))}</strong>`;
   };
   mostrarNoGrafico(
     {
       tipo: 'definida',
       f: avaliador(r.entrada),
-      a,
-      b,
-      rotulos: [bonito(a), bonito(b)],
+      a: ga,
+      b: gb,
+      rotulos: [rotulo(a), rotulo(b)],
       diverge,
       singularidades: r.descontinuidades,
       trigonometrica: usaTrigonometria(r.entrada),
     },
-    `Gráfico de f(x) = ${paraTexto(r.entrada)} de ${bonito(a)} a ${bonito(b)}, com retângulos de Riemann que se multiplicam até virar a área.`,
+    `Gráfico de f(x) = ${paraTexto(r.entrada)} de ${pontaDoIntervalo(a)} a ${pontaDoIntervalo(b)}, com retângulos de Riemann que se multiplicam até virar a área.`,
     [
       [`f(${X})`, 'var(--cor-f)'],
       ['área positiva', 'var(--cor-f)'],
