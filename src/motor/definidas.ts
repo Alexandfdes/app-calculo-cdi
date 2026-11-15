@@ -13,7 +13,7 @@
  * Onde procurar os pontos sem valor vem da estrutura da expressão: denominadores, cos(u) em
  * tg e sec, sen(u) em cotg e csc, argumento do ln. Os pontos em si são achados numericamente.
  */
-import { ErroDeEntrada, avaliar, contem, func, lerExpressao, num, paraTexto } from './expressao';
+import { ErroDeEntrada, avaliar, contem, func, lerExpressao, num, paraTexto, potenciaReal } from './expressao';
 import type { Expr } from './expressao';
 import { integrar } from './integrais';
 import type { ResultadoIntegral } from './integrais';
@@ -46,6 +46,8 @@ const DIVISOES = 4000;
 
 /** Até onde, a partir da ponta finita, o motor procura descontinuidades num intervalo sem fim. */
 const ALCANCE = [40.37, 400.11];
+/** Além do ALCANCE, faixas cada vez mais largas, para achar um polo longe (1/(x − 500)²). */
+const ALCANCE_LONGE = [4000.13, 40000.17, 1000000.19];
 
 /** Limites como número (0, Math.PI) ou como texto ("0", "pi", "2*pi", "e", "inf", "-inf"). */
 export function integralDefinida(
@@ -174,9 +176,15 @@ function limiteDeIntegracao(limite: number | string, x: string): [Expr, number] 
 function janelas(lo: number, hi: number): [number, number, [boolean, boolean]][] {
   if (Number.isFinite(lo) && Number.isFinite(hi)) return [[lo, hi, [true, true]]];
   const [perto, longe] = [ALCANCE[0]!, ALCANCE[1]!];
-  if (Number.isFinite(lo)) return [[lo, lo + perto, [true, false]], [lo + perto, lo + longe, [false, false]]];
-  if (Number.isFinite(hi)) return [[hi - longe, hi - perto, [false, false]], [hi - perto, hi, [false, true]]];
-  return [[-longe, -perto, [false, false]], [-perto, perto, [false, false]], [perto, longe, [false, false]]];
+  // faixas além do alcance: [400, 4000], [4000, 40000], [40000, 10⁶], sem as pontas
+  const alem = (centro: number, sentido: 1 | -1): [number, number, [boolean, boolean]][] =>
+    [longe, ...ALCANCE_LONGE].slice(0, -1).map((d, i) => {
+      const [p, q] = [centro + sentido * d, centro + sentido * ALCANCE_LONGE[i]!];
+      return [Math.min(p, q), Math.max(p, q), [false, false]];
+    });
+  if (Number.isFinite(lo)) return [[lo, lo + perto, [true, false]], [lo + perto, lo + longe, [false, false]], ...alem(lo, 1)];
+  if (Number.isFinite(hi)) return [...alem(hi, -1), [hi - longe, hi - perto, [false, false]], [hi - perto, hi, [false, true]]];
+  return [...alem(0, -1), [-longe, -perto, [false, false]], [-perto, perto, [false, false]], [perto, longe, [false, false]], ...alem(0, 1)];
 }
 
 /** O limite de F no infinito; recusa quando o motor de limites não resolve. */
@@ -233,13 +241,26 @@ function pontosSemValor(e: Expr, v: string, lo: number, hi: number, pontas: [boo
   return unicos(pontos);
 }
 
+/** O NaN veio de um número grande demais no meio da conta (e^(x²) em x = −400), e não de falta de valor real? */
+function transbordou(e: Expr, valores: Record<string, number>): boolean {
+  const filhos = Object.values(e).filter((c): c is Expr => typeof c === 'object' && c !== null && 'tipo' in c);
+  if (filhos.some((c) => transbordou(c, valores))) return true;
+  // o avaliador troca infinito por NaN; aqui a conta crua diz se foi estouro (base maior que 1)
+  // ou um produto de dois números finitos grandes demais, e não um polo como 0⁻¹
+  const [p, q] = filhos.map((c) => avaliar(c, valores));
+  if (p === undefined || q === undefined || !Number.isFinite(p) || !Number.isFinite(q)) return false;
+  if (e.tipo === 'pot') return Math.abs(p) > 1 && !Number.isFinite(potenciaReal(p, q));
+  if (e.tipo === 'mul') return p !== 0 && q !== 0 && !Number.isFinite(p * q);
+  return false;
+}
+
 /** Recusa a integral quando o integrando não tem valor real em parte do intervalo, como √x em [−1, 1]. */
 function exigirValor(e: Expr, v: string, lo: number, hi: number, excecoes: number[]): void {
   const n = 400;
   for (let i = 0; i <= n; i++) {
     const t = i === n ? hi : lo + ((hi - lo) * i) / n;
     if (excecoes.some((c) => Math.abs(t - c) < FOLGA)) continue;
-    if (Number.isNaN(avaliar(e, { [v]: t }))) {
+    if (Number.isNaN(avaliar(e, { [v]: t })) && !transbordou(e, { [v]: t })) {
       const intervalo = `[${numeroBonito(lo)}, ${numeroBonito(hi)}]`;
       throw new ErroDeEntrada(`${paraTexto(e)} não tem valor real em ${v} = ${numeroBonito(t)}, dentro de ${intervalo}: essa integral definida não existe.`);
     }

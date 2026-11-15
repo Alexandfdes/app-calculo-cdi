@@ -101,7 +101,7 @@ export function curto(v: number): string {
   if (!Number.isFinite(v)) return v > 0 ? '∞' : '−∞';
   const modulo = Math.abs(v);
   const texto = modulo !== 0 && (modulo >= 1e5 || modulo < 1e-3) ? v.toExponential(2) : String(Number(v.toFixed(modulo >= 100 ? 1 : 3)));
-  return texto.replace('-', '−');
+  return texto.replace(/-/g, '−');
 }
 
 const limitar = (v: number, min: number, max: number): number => Math.min(max, Math.max(min, v));
@@ -129,7 +129,7 @@ export class Grafico {
   private ultimaLeitura = '';
   /** Entrada escolhida fora do gráfico (a conta "f(3) = …"): o ponto móvel para nela. */
   private fixo: number | null = null;
-  private readonly cacheCurvas = new Map<Funcao, { x0: number; x1: number; y0: number; y1: number; n: number; pontos: [number, number | null][] }>();
+  private readonly cacheCurvas = new Map<Funcao, { x0: number; x1: number; y0: number; y1: number; n: number; pontos: [number, number | null][]; saltos: Set<number> }>();
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -222,7 +222,13 @@ export class Grafico {
       this.acumulada = (x) => (x < trecho[0] || x > trecho[1] ? Number.NaN : cena.primitiva(x) - base);
       curvas.push(this.acumulada);
     }
-    this.vista = { x0, x1, ...faixaVertical(curvas, x0, x1) };
+    let faixa = faixaVertical(curvas, x0, x1);
+    if (cena.tipo === 'derivada') {
+      // se f′ for bem mais alta que f (tg e sec²), a janela segue f, para f não sumir achatada
+      const soF = faixaVertical([curvas[0]!], x0, x1);
+      if (faixa.y1 - faixa.y0 > 3 * (soF.y1 - soF.y0)) faixa = soF;
+    }
+    this.vista = { x0, x1, ...faixa };
     this.pedirQuadro();
   }
 
@@ -735,7 +741,14 @@ export class Grafico {
         const valido = Number.isFinite(y) && Math.abs(y - (y0 + y1) / 2) <= altura * 50;
         pontos.push([x, valido ? y : null]);
       }
-      entradaCache = { x0, x1, y0, y1, n, pontos };
+      // saltos de verdade (como |x|′ em 0) quebram a curva, qualquer que seja a largura da tela
+      const saltos = new Set<number>();
+      for (let i = 1; i <= n; i++) {
+        const [xa, ya] = pontos[i - 1]!;
+        const [xb, yb] = pontos[i]!;
+        if (ya !== null && yb !== null && Math.abs(yb - ya) > altura * 0.05 && pulou(f, xa, xb, altura)) saltos.add(i);
+      }
+      entradaCache = { x0, x1, y0, y1, n, pontos, saltos };
       this.cacheCurvas.set(f, entradaCache);
     }
 
@@ -757,7 +770,7 @@ export class Grafico {
         anterior = null;
         continue;
       }
-      const salto = anterior !== null && Math.abs(y - anterior) > altura * 2.5;
+      const salto = anterior !== null && (Math.abs(y - anterior) > altura * 2.5 || entradaCache.saltos.has(i));
       const cruzouQuebra = quebras.some((q) => xAnterior < q && x >= q);
       if (anterior === null || salto || cruzouQuebra) ctx.moveTo(this.px(x), this.py(y));
       else ctx.lineTo(this.px(x), this.py(y));
@@ -1008,6 +1021,24 @@ function comMargem(a: number, b: number): [number, number] {
   return [lo - d * 0.18, hi + d * 0.18];
 }
 
+/**
+ * Entre duas amostras vizinhas a curva subiu muito: foi um salto (|x|′ em 0) ou só uma subida íngreme?
+ * Aperta o intervalo pela metade, seguindo o lado onde está a maior parte da variação; num salto,
+ * a variação não diminui (ou f deixa de existir no caminho), numa curva contínua ela some.
+ */
+function pulou(f: Funcao, a: number, b: number, altura: number): boolean {
+  let [xa, xb] = [a, b];
+  let [ya, yb] = [f(a), f(b)];
+  for (let i = 0; i < 30; i++) {
+    const m = (xa + xb) / 2;
+    const ym = f(m);
+    if (!Number.isFinite(ym)) return true;
+    if (Math.abs(ym - ya) >= Math.abs(yb - ym)) [xb, yb] = [m, ym];
+    else [xa, ya] = [m, ym];
+  }
+  return Math.abs(yb - ya) > altura * 0.01;
+}
+
 /** Faixa vertical que mostra bem as curvas: ignora os 3% mais extremos (assíntotas) e inclui o eixo x. */
 function faixaVertical(curvas: Funcao[], x0: number, x1: number): { y0: number; y1: number } {
   const ys: number[] = [];
@@ -1064,7 +1095,8 @@ export function passoBonito(bruto: number): number {
 /** Marcas em múltiplos de π para gráficos de seno e cosseno. */
 export function passoDePi(faixa: number): number {
   const candidatos = [Math.PI / 4, Math.PI / 2, Math.PI, 2 * Math.PI];
-  return candidatos.find((p) => faixa / p <= 12) ?? 2 * Math.PI;
+  // em trechos muito longos, múltiplos redondos de 2π, para não empilhar centenas de rótulos
+  return candidatos.find((p) => faixa / p <= 12) ?? 2 * Math.PI * passoBonito(faixa / (2 * Math.PI) / 8);
 }
 
 export function rotuloDePi(x: number): string {
