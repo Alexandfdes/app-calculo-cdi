@@ -237,6 +237,7 @@ const ETIQUETAS: Record<Etiqueta, { nome: string; cor: string }> = {
   'limite no infinito': { nome: 'Limite no infinito', cor: '#60a5fa' },
   'limites laterais': { nome: 'Limites laterais', cor: '#38bdf8' },
   continuidade: { nome: 'Continuidade', cor: '#facc15' },
+  'ordem de crescimento': { nome: 'Ordem de crescimento', cor: '#4ade80' },
   linear: { nome: 'Linear', cor: '#60a5fa' },
   afim: { nome: 'Afim', cor: '#38bdf8' },
   quadrática: { nome: 'Quadrática', cor: '#a78bfa' },

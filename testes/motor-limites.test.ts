@@ -131,7 +131,7 @@ describe('A interpretação explica o resultado (quadro 11, passo 5)', () => {
 
 describe('Entradas que o motor não resolve têm mensagem clara', () => {
   const casos: [string, string, RegExp][] = [
-    ['e^x/x', 'inf', /forma indeterminada ∞\/∞/],
+    ['x*sen(x)', 'inf', /forma indeterminada ∞ · oscilação/],
     ['x^2', 'abc', /Símbolo desconhecido/],
     ['x < y ? 1 : 2', '0', /comparar x com um número/],
     ['x < 5 ? 1', '5', /função por partes/],
@@ -175,5 +175,49 @@ describe('Conferência em massa da fatoração', () => {
       if (typeof obtido !== 'number' || Math.abs(obtido - esperado) > 1e-9) erros.push(`${f}: ${String(obtido)} ≠ ${esperado}`);
     }
     expect(erros).toEqual([]);
+  });
+});
+
+describe('Limites que antes ficavam sem técnica', () => {
+  // [f, ponto, limite esperado (número, '+∞', '-∞' ou 'não existe'), técnica que precisa aparecer]
+  const casos: [string, string, number | string, string][] = [
+    ['tg(x)/x', '0', 1, 'limite fundamental'],
+    ['sen(5*x)/sen(3*x)', '0', 5 / 3, 'limite fundamental'],
+    ['sen(x^2)/x', '0', 0, 'limite fundamental'],
+    ['x/tg(2*x)', '0', 0.5, 'limite fundamental'],
+    ['(1 - cos(x))/(x*sen(x))', '0', 0.5, 'limite fundamental'],
+    ['sen(x)/(x - pi)', 'pi', -1, 'limite fundamental'],
+    ['tg(3*x)/(e^(2*x) - 1)', '0', 1.5, 'limite fundamental'],
+    ['(1 + 1/x)^x', 'inf', Math.E, 'limite fundamental'],
+    ['(1 + 2/x)^(3*x)', 'inf', Math.exp(6), 'limite fundamental'],
+    ['(1 - 1/x)^x', 'inf', Math.exp(-1), 'limite fundamental'],
+    ['e^x/x', 'inf', '+∞', 'ordem de crescimento'],
+    ['ln(x)/x', 'inf', 0, 'ordem de crescimento'],
+    ['x*e^(-x)', 'inf', 0, 'ordem de crescimento'],
+    ['x^3/e^x', 'inf', 0, 'ordem de crescimento'],
+    ['x/ln(x)', 'inf', '+∞', 'ordem de crescimento'],
+    ['sqrt(x^2 + 1)/x', 'inf', 1, 'ordem de crescimento'],
+    ['sqrt(x^2 + 1)/x', '-inf', -1, 'ordem de crescimento'],
+    ['x - sqrt(x^2 + 1)', 'inf', 0, 'racionalização'],
+    ['sqrt(x^2 + x) - x', 'inf', 0.5, 'racionalização'],
+  ];
+  for (const [f, ponto, esperado, tecnica] of casos) {
+    it(`lim x→${ponto} ${f} = ${typeof esperado === 'number' ? esperado.toFixed(4) : esperado}`, () => {
+      const r = calcularLimite(f, ponto);
+      if (typeof esperado === 'number') {
+        expect(typeof r.limite).toBe('number');
+        expect(r.limite as number).toBeCloseTo(esperado, 10);
+      } else expect(r.limite).toBe(esperado);
+      expect(r.passos.map((p) => p.tecnica)).toContain(tecnica);
+    });
+  }
+
+  it('o resultado de (1 + 1/x)^x sai exato: e', () => {
+    expect(paraTexto(calcularLimite('(1 + 1/x)^x', 'inf').exato!)).toBe('e');
+  });
+
+  it('sem fator equivalente, continua recusando em vez de chutar', () => {
+    expect(() => calcularLimite('x*sen(x)', 'inf')).toThrow(ErroDeEntrada);
+    expect(() => calcularLimite('sqrt(x^2 + x) + x', '-inf')).toThrow(ErroDeEntrada);
   });
 });

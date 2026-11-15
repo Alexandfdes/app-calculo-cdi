@@ -13,7 +13,7 @@
  */
 import { isConditionalNode, isOperatorNode, isParenthesisNode, isSymbolNode, parse } from 'mathjs';
 import type { MathNode } from 'mathjs';
-import { E, ErroDeEntrada, avaliar, contem, div, func, iguais, lerExpressao, mul, neg, num, paraTexto, pot, soma, sub, trocar, variavel } from './expressao';
+import { E, ErroDeEntrada, PI, avaliar, contem, div, func, iguais, lerExpressao, mul, neg, num, paraTexto, pot, soma, sub, trocar, variavel } from './expressao';
 import type { Expr, NomeFuncao } from './expressao';
 import { numeroParaLer } from './numeros';
 import { comoPolinomio, dividirPorRaiz, grau, lider, paraExpr, zeraEm } from './polinomios';
@@ -37,7 +37,8 @@ export type TecnicaLimite =
   | 'confronto'
   | 'limite no infinito'
   | 'limites laterais'
-  | 'continuidade';
+  | 'continuidade'
+  | 'ordem de crescimento';
 
 export interface PassoLimite {
   tecnica: TecnicaLimite;
@@ -279,6 +280,19 @@ function substituicao(e: Expr, alvo: { a: number; lado: Lado }, x: string): Valo
 // ─── O limite, regra por regra ─────────────────────────────────────────────────
 
 function limite(e: Expr, alvo: Alvo, ctx: Contexto): Valor {
+  const v = limiteDireto(e, alvo, ctx);
+  if (v.tipo !== 'indeterminada' || ctx.profundidade > 60) return v;
+  const dentro: Contexto = { ...ctx, profundidade: ctx.profundidade + 1 };
+  // ∞ − ∞ com raiz: o conjugado; e, no infinito, a ordem de crescimento
+  if (e.tipo === 'sub' && v.forma === '∞ − ∞') {
+    const c = conjugadoNoInfinito(e.a, e.b, alvo, dentro);
+    if (c) return c;
+  }
+  if ('infinito' in alvo) return porCrescimento(e, alvo.infinito, dentro) ?? v;
+  return v;
+}
+
+function limiteDireto(e: Expr, alvo: Alvo, ctx: Contexto): Valor {
   if (ctx.profundidade > 60) return indeterminada('uma conta comprida demais');
   const dentro: Contexto = { ...ctx, profundidade: ctx.profundidade + 1 };
   if ('a' in alvo) {
@@ -450,6 +464,7 @@ function potencia(base: Expr, exp: Expr, alvo: Alvo, ctx: Contexto): Valor {
   const b = limite(base, alvo, ctx);
   const L = limite(exp, alvo, ctx);
   if (b.tipo === 'finito' && b.v > 0 && L.tipo === 'finito') return finito(b.v ** L.v);
+  if (b.tipo === 'finito' && Math.abs(b.v - 1) < 1e-12 && L.tipo === 'infinito') return umElevadoAoInfinito(base, exp, alvo, ctx) ?? indeterminada('1^∞');
   return indeterminada('base e expoente variando juntos (como 1^∞)');
 }
 
@@ -552,6 +567,7 @@ function zeroSobreZero(N: Expr, D: Expr, alvo: Alvo, ctx: Contexto): Valor {
     limiteFundamental(N, D, alvo, ctx) ??
     fatoracao(N, D, alvo, ctx) ??
     racionalizacao(N, D, alvo, ctx) ??
+    porEquivalentes(N, D, alvo, ctx) ??
     semModulo(div(N, D), alvo, ctx) ??
     indeterminada('0/0')
   );
@@ -774,6 +790,194 @@ function tentarMolde(F: Expr, G: Expr, invertido: boolean, alvo: Alvo, ctx: Cont
     return finito(v, exato);
   }
   return null;
+}
+
+// ─── Fatores equivalentes perto do ponto (quadro 7) ────────────────────────────
+
+/**
+ * Fator que, perto do ponto, vale quase o mesmo que algo mais simples, porque o quociente dos
+ * dois vai a 1 (os limites fundamentais): sen u ≈ u e tg u ≈ u com u → 0 (e, com u → kπ,
+ * sen u ≈ ±(u − kπ)); 1 − cos u ≈ u²/2; eᵘ − 1 ≈ u; aᵘ − 1 ≈ u·ln a; ln(1 + u) ≈ u.
+ */
+function equivalente(f: Expr, alvo: Alvo, ctx: Contexto): Expr | null {
+  const vaiA = (u: Expr): Valor => limite(u, alvo, silencioso(ctx));
+  if (f.tipo === 'func' && (f.nome === 'sen' || f.nome === 'tg')) {
+    const L = vaiA(f.arg);
+    if (L.tipo !== 'finito') return null;
+    const k = Math.round(L.v / Math.PI);
+    if (Math.abs(L.v - k * Math.PI) > 1e-12) return null;
+    const u = k === 0 ? f.arg : simplificar(sub(f.arg, mul(num(k), PI)));
+    return f.nome === 'sen' && k % 2 !== 0 ? neg(u) : u;
+  }
+  if (f.tipo === 'sub' && ehUm(f.a) && f.b.tipo === 'func' && f.b.nome === 'cos' && ehZero(vaiA(f.b.arg))) {
+    return div(pot(f.b.arg, num(2)), num(2));
+  }
+  if (f.tipo === 'sub' && ehUm(f.b) && f.a.tipo === 'pot' && !contem(f.a.base, ctx.x) && ehZero(vaiA(f.a.exp))) {
+    if (iguais(f.a.base, E)) return f.a.exp;
+    const a = avaliar(f.a.base);
+    return a > 0 && a !== 1 ? mul(f.a.exp, func('ln', f.a.base)) : null;
+  }
+  if (f.tipo === 'func' && f.nome === 'ln' && f.arg.tipo === 'soma' && (ehUm(f.arg.a) || ehUm(f.arg.b))) {
+    const u = ehUm(f.arg.a) ? f.arg.b : f.arg.a;
+    return ehZero(vaiA(u)) ? u : null;
+  }
+  return null;
+}
+
+/** sen(5x)/sen(3x) ≈ 5x/3x: troca cada fator pelo equivalente e calcula o limite do que sobra. */
+function porEquivalentes(N: Expr, D: Expr, alvo: Alvo, ctx: Contexto): Valor | null {
+  if (!('a' in alvo)) return null;
+  const trocas: string[] = [];
+  const trocar = (e: Expr): Expr => {
+    if (e.tipo === 'mul') return mul(trocar(e.a), trocar(e.b));
+    if (e.tipo === 'div') return div(trocar(e.a), trocar(e.b));
+    if (e.tipo === 'neg') return neg(trocar(e.a));
+    const q = equivalente(e, alvo, ctx);
+    if (!q) return e;
+    trocas.push(`${paraTexto(e)} ≈ ${paraTexto(simplificar(q))}`);
+    return q;
+  };
+  const nova = simplificar(div(trocar(N), trocar(D)));
+  if (trocas.length === 0) return null;
+  const v = limite(nova, alvo, silencioso(ctx));
+  if (problema(v)) return null;
+  registrar(
+    ctx,
+    'limite fundamental',
+    `Limite fundamental (quadro 7): perto de x = ${bonito(alvo.a)}, cada fator abaixo vale quase o mesmo que uma expressão mais simples, porque o quociente dos dois vai a 1: ${trocas.join('; ')}. Trocando, sobra ${paraTexto(nova)}.`,
+    [div(N, D), nova],
+  );
+  return limite(nova, alvo, ctx);
+}
+
+// ─── 1^∞: o limite fundamental do número e ─────────────────────────────────────
+
+/** base − 1, escrita sem o 1: (1 + f) − 1 = f e (1 − f) − 1 = −f. */
+function menosUm(base: Expr): Expr {
+  if (base.tipo === 'soma' && ehUm(base.a)) return base.b;
+  if (base.tipo === 'soma' && ehUm(base.b)) return base.a;
+  if (base.tipo === 'sub' && ehUm(base.a)) return neg(base.b);
+  return sub(base, num(1));
+}
+
+/** (1 + f)^g com f → 0 e g → ∞: o limite é e elevado ao limite de f·g, como em (1 + 1/x)^x → e. */
+function umElevadoAoInfinito(base: Expr, exp: Expr, alvo: Alvo, ctx: Contexto): Valor | null {
+  const produto = simplificar(mul(menosUm(base), exp));
+  const M = limite(produto, alvo, silencioso(ctx));
+  if (M.tipo !== 'finito' && M.tipo !== 'infinito') return null;
+  const texto = `Limite fundamental (quadro 7): (1 + 1/u)^u → e. A base vai a 1 e o expoente ao infinito (forma 1^∞); o limite é e elevado ao limite de (base − 1)·expoente = ${paraTexto(produto)}`;
+  if (M.tipo === 'infinito') {
+    registrar(ctx, 'limite fundamental', `${texto}, que vai a ${textoInfinito(M.sinal)}.`);
+    return M.sinal > 0 ? infinito(1) : finito(0);
+  }
+  const exato = M.v === 0 ? num(1) : M.v === 1 ? E : pot(E, simplificar(num(M.v)));
+  registrar(ctx, 'limite fundamental', `${texto}, que vai a ${bonito(M.v)}. Então o limite é ${paraTexto(exato)}.`, [pot(base, exp), exato]);
+  return finito(Math.exp(M.v), exato);
+}
+
+// ─── No infinito: ordem de crescimento ─────────────────────────────────────────
+
+/** Comportamento no infinito: A·|x|^p·e^(r·|x|)·(ln|x|)^m, com o sinal de x já dentro de A e de r. */
+interface Dominante {
+  A: number;
+  p: number;
+  r: number;
+  m: number;
+}
+
+const mesmaOrdem = (a: Dominante, b: Dominante): boolean => Math.abs(a.p - b.p) < 1e-12 && Math.abs(a.r - b.r) < 1e-12 && Math.abs(a.m - b.m) < 1e-12;
+const maior = (a: Dominante, b: Dominante): boolean => a.r > b.r + 1e-12 || (Math.abs(a.r - b.r) <= 1e-12 && (a.p > b.p + 1e-12 || (Math.abs(a.p - b.p) <= 1e-12 && a.m > b.m)));
+
+/** O termo que manda no infinito; null quando não dá para dizer (seno, cancelamento). */
+function dominante(e: Expr, s: Lado, x: string): Dominante | null {
+  if (!contem(e, x)) {
+    const v = avaliar(e);
+    return Number.isFinite(v) && v !== 0 ? { A: v, p: 0, r: 0, m: 0 } : null;
+  }
+  const p = comoPolinomio(e, x);
+  if (p && grau(p) > 0) {
+    const d = grau(p);
+    return { A: lider(p) * s ** d, p: d, r: 0, m: 0 };
+  }
+  const junta = (a: Dominante | null, b: Dominante | null, k: 1 | -1): Dominante | null =>
+    a && b ? { A: k > 0 ? a.A * b.A : a.A / b.A, p: a.p + k * b.p, r: a.r + k * b.r, m: a.m + k * b.m } : null;
+  switch (e.tipo) {
+    case 'mul':
+      return junta(dominante(e.a, s, x), dominante(e.b, s, x), 1);
+    case 'div':
+      return junta(dominante(e.a, s, x), dominante(e.b, s, x), -1);
+    case 'neg': {
+      const a = dominante(e.a, s, x);
+      return a ? { ...a, A: -a.A } : null;
+    }
+    case 'soma':
+    case 'sub': {
+      const a = dominante(e.a, s, x);
+      const b0 = dominante(e.b, s, x);
+      if (!a || !b0) return null;
+      const b = e.tipo === 'sub' ? { ...b0, A: -b0.A } : b0;
+      if (!mesmaOrdem(a, b)) return maior(a, b) ? a : b;
+      const A = a.A + b.A;
+      return Math.abs(A) > 1e-12 * Math.max(Math.abs(a.A), Math.abs(b.A)) ? { ...a, A } : null; // cancelou: não dá para dizer
+    }
+    case 'pot': {
+      if (!contem(e.exp, x)) {
+        const n = avaliar(e.exp);
+        const b = dominante(e.base, s, x);
+        if (!b || (b.A < 0 && !Number.isInteger(n))) return null;
+        return { A: b.A ** n, p: b.p * n, r: b.r * n, m: b.m * n };
+      }
+      if (contem(e.base, x)) return null;
+      const c = avaliar(e.base);
+      const q = comoPolinomio(e.exp, x);
+      if (!(c > 0) || c === 1 || !q || grau(q) !== 1) return null;
+      // c^(kx + b) = c^b·e^(k·ln c·x); com x → −∞, x = −|x|
+      return { A: c ** (q[0] ?? 0), p: 0, r: (q[1] ?? 0) * Math.log(c) * s, m: 0 };
+    }
+    case 'func': {
+      const a = dominante(e.arg, s, x);
+      if (!a) return null;
+      if (e.nome === 'raiz') return a.A > 0 ? { A: Math.sqrt(a.A), p: a.p / 2, r: a.r / 2, m: a.m / 2 } : null;
+      if (e.nome === 'abs') return { ...a, A: Math.abs(a.A) };
+      if (e.nome === 'ln' && a.A > 0) {
+        if (a.r > 0) return { A: a.r, p: 1, r: 0, m: 0 }; // ln(e^(r|x|)) ≈ r|x|
+        if (a.r === 0 && a.p > 0) return { A: a.p, p: 0, r: 0, m: 1 }; // ln|x|^p ≈ p·ln|x|
+      }
+      return null;
+    }
+    default:
+      return null;
+  }
+}
+
+/** e^x/x, ln x/x, x·e^(−x), √(x² + 1)/x: no infinito, cada parte segue o termo que manda. */
+function porCrescimento(e: Expr, s: Lado, ctx: Contexto): Valor | null {
+  const d = dominante(e, s, ctx.x);
+  if (!d || (d.p === 0 && d.r === 0 && d.m === 0 && !contem(e, ctx.x))) return null;
+  let v: Valor;
+  if (d.r !== 0) v = d.r > 0 ? infinito(Math.sign(d.A)) : finito(0);
+  else if (d.p !== 0) v = d.p > 0 ? infinito(Math.sign(d.A)) : finito(0);
+  else if (d.m !== 0) v = d.m > 0 ? infinito(Math.sign(d.A)) : finito(0);
+  else v = finito(d.A);
+  registrar(
+    ctx,
+    'ordem de crescimento',
+    `No infinito, cada parte segue o termo que manda: exponencial cresce mais que qualquer potência de x, e potência cresce mais que ln x; uma raiz segue a raiz do termo de maior grau. Em ${paraTexto(e)}, o que manda leva a ${textoDoValor(v)}.`,
+  );
+  return v;
+}
+
+/** ∞ − ∞ com raiz: multiplica e divide pelo conjugado, (A − B)(A + B) = A² − B². */
+function conjugadoNoInfinito(A: Expr, B: Expr, alvo: Alvo, ctx: Contexto): Valor | null {
+  if (!(temRaiz(A) || temRaiz(B))) return null;
+  const nova = div(simplificar(sub(quadrado(A), quadrado(B))), soma(A, B));
+  const v = limite(nova, alvo, silencioso(ctx));
+  if (problema(v)) return null;
+  registrar(ctx, 'racionalização', `Racionalização (quadro 5): multiplicando e dividindo por ${paraTexto(soma(A, B))}, o conjugado, a forma ∞ − ∞ vira ${paraTexto(nova)}.`, [
+    sub(A, B),
+    nova,
+  ]);
+  return limite(nova, alvo, ctx);
 }
 
 // ─── O roteiro do quadro 11 ────────────────────────────────────────────────────
