@@ -957,8 +957,8 @@ const HISTORIA: { aula: IdAula; numero: number; titulo: string; texto: string; b
 
 /** O carro chegando na lombada nas quatro aulas, com a aula aberta em destaque, e o laboratório dele. */
 export function historiaDoCarro(atual: IdAula): string {
-  return `<section class="historia" aria-labelledby="historia-${atual}">
-    <h3 id="historia-${atual}"><span aria-hidden="true">🚗</span> Um carro chegando na lombada, nas quatro aulas</h3>
+  return `<details class="historia cartao" style="--cor: #38bdf8">
+    <summary><h3 id="historia-${atual}"><span aria-hidden="true">🚗</span> Um carro chegando na lombada, nas quatro aulas</h3></summary>
     <p class="historia-intro">Um carro vem a 20 m/s (72 km/h). No instante ${m('t = 0')}, o motorista vê uma lombada 62 m à frente, que pede no máximo 30 km/h. Ele leva 1 s para reagir e então freia, perdendo 4 m/s a cada segundo, até chegar à lombada. O mesmo problema atravessa as quatro aulas. Na calculadora, o tempo ${m('t')} é digitado como ${m('x')}.</p>
     <ol class="historia-passos">${HISTORIA.map(
       (p) => `<li${p.aula === atual ? ' class="atual" aria-current="step"' : ''}>
@@ -970,7 +970,7 @@ export function historiaDoCarro(atual: IdAula): string {
     <h4 class="historia-lab">Laboratório: o motorista e a lombada</h4>
     <p class="historia-intro">Mude o tempo de reação e a força da freada e veja com que velocidade o carro chega. A área azul debaixo da velocidade é a distância andada.</p>
     <div class="lab lab-lombada" data-lab="lombada"></div>
-  </section>`;
+  </details>`;
 }
 
 /** A aula inteira: o topo, os cartões, o carro e a navegação para as vizinhas. */
@@ -979,10 +979,11 @@ export function htmlDaAula(aula: Aula): string {
   const anterior = AULAS[i - 1];
   const proxima = AULAS[i + 1];
   const cartoes = aula.cartoes.map(
-    (c, j) => `<section class="cartao${c.largo ? ' largo' : ''}" style="--cor: ${c.cor}; --i: ${j}" aria-labelledby="cartao-${aula.id}-${j}">
-      <h3 id="cartao-${aula.id}-${j}">${c.titulo}</h3>
-      ${c.html}
-    </section>`,
+    // cada cartão começa fechado, só com o título: o aluno abre o que quer ler
+    (c, j) => `<details class="cartao${c.largo ? ' largo' : ''}" style="--cor: ${c.cor}; --i: ${j}">
+      <summary><h3 id="cartao-${aula.id}-${j}">${c.titulo}</h3></summary>
+      <div class="cartao-corpo">${c.html}</div>
+    </details>`,
   );
   return `<header class="aula-topo">
       

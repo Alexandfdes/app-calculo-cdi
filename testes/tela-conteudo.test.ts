@@ -322,7 +322,7 @@ describe('HTML das aulas', () => {
     for (const aula of AULAS) {
       const html = htmlDaAula(aula);
       expect(html).toContain('data-lab=');
-      expect(html).toContain('class="historia"');
+      expect(html).toContain('class="historia cartao"');
       expect(html).toContain('data-lab="lombada"');
     }
   });
