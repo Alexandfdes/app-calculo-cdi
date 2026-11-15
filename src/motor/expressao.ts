@@ -79,7 +79,35 @@ export function contem(e: Expr, nome: string): boolean {
   }
 }
 
-export const iguais = (a: Expr, b: Expr): boolean => JSON.stringify(a) === JSON.stringify(b);
+export function iguais(a: Expr, b: Expr): boolean {
+  if (a === b) return true;
+  if (a.tipo !== b.tipo) return false;
+  switch (a.tipo) {
+    case 'num':
+      return Object.is(a.valor, (b as typeof a).valor);
+    case 'var':
+      return a.nome === (b as typeof a).nome;
+    case 'const':
+      return a.nome === (b as typeof a).nome;
+    case 'soma':
+    case 'sub':
+    case 'mul':
+    case 'div':
+      return iguais(a.a, (b as typeof a).a) && iguais(a.b, (b as typeof a).b);
+    case 'pot':
+      return iguais(a.base, (b as typeof a).base) && iguais(a.exp, (b as typeof a).exp);
+    case 'neg':
+      return iguais(a.a, (b as typeof a).a);
+    case 'func':
+      return a.nome === (b as typeof a).nome && iguais(a.arg, (b as typeof a).arg);
+    case 'log':
+      return iguais(a.arg, (b as typeof a).arg) && iguais(a.base, (b as typeof a).base);
+    case 'derivada':
+      return iguais(a.de, (b as typeof a).de);
+    case 'integral':
+      return a.variavel === (b as typeof a).variavel && iguais(a.de, (b as typeof a).de);
+  }
+}
 
 /** Troca cada ocorrência de `alvo` (comparada pela estrutura) por `por`. */
 export function trocar(e: Expr, alvo: Expr, por: Expr): Expr {

@@ -1085,7 +1085,7 @@ function celebrar(): void {
 function criarFundo(): void {
   if (calmo) return;
   const fundo = elemento<HTMLDivElement>('fundo');
-  for (let i = 0; i < 26; i++) {
+  for (let i = 0; i < 12; i++) {
     const s = document.createElement('span');
     const duracao = 22 + Math.random() * 26;
     s.textContent = SIMBOLOS[Math.floor(Math.random() * SIMBOLOS.length)]!;
@@ -1214,12 +1214,16 @@ formulario.addEventListener('submit', (ev) => {
   calcular();
 });
 
+let timerPrevia: number | undefined;
 campo.addEventListener('input', () => {
   digitacao++;
   veioDeExemplo = false;
   exemploAtual = null;
   campo.classList.remove('digitando');
-  atualizarPrevia();
+  clearTimeout(timerPrevia);
+  timerPrevia = window.setTimeout(() => {
+    atualizarPrevia();
+  }, 70);
 });
 
 modos.querySelectorAll<HTMLInputElement>('input[name="modo"]').forEach((radio) => {

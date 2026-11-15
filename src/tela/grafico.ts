@@ -129,6 +129,7 @@ export class Grafico {
   private ultimaLeitura = '';
   /** Entrada escolhida fora do gráfico (a conta "f(3) = …"): o ponto móvel para nela. */
   private fixo: number | null = null;
+  private readonly cacheCurvas = new Map<Funcao, { x0: number; x1: number; y0: number; y1: number; n: number; pontos: [number, number | null][] }>();
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -723,6 +724,21 @@ export class Grafico {
     const altura = y1 - y0;
     const n = Math.max(240, Math.floor(this.largura / 1.5));
     const limite = x0 + (x1 - x0) * progressoDaCurva;
+
+    let entradaCache = this.cacheCurvas.get(f);
+    if (!entradaCache || entradaCache.x0 !== x0 || entradaCache.x1 !== x1 || entradaCache.y0 !== y0 || entradaCache.y1 !== y1 || entradaCache.n !== n) {
+      if (this.cacheCurvas.size > 15) this.cacheCurvas.clear();
+      const pontos: [number, number | null][] = [];
+      for (let i = 0; i <= n; i++) {
+        const x = x0 + ((x1 - x0) * i) / n;
+        const y = f(x);
+        const valido = Number.isFinite(y) && Math.abs(y - (y0 + y1) / 2) <= altura * 50;
+        pontos.push([x, valido ? y : null]);
+      }
+      entradaCache = { x0, x1, y0, y1, n, pontos };
+      this.cacheCurvas.set(f, entradaCache);
+    }
+
     let anterior: number | null = null;
     let xAnterior = Number.NEGATIVE_INFINITY;
     let ponta: [number, number] | null = null;
@@ -732,13 +748,12 @@ export class Grafico {
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     ctx.shadowColor = cor;
-    ctx.shadowBlur = 14;
+    ctx.shadowBlur = progressoDaCurva < 1 ? 4 : 0;
     ctx.beginPath();
     for (let i = 0; i <= n; i++) {
-      const x = x0 + ((x1 - x0) * i) / n;
+      const [x, y] = entradaCache.pontos[i]!;
       if (x > limite) break;
-      const y = f(x);
-      if (!Number.isFinite(y) || Math.abs(y - (y0 + y1) / 2) > altura * 50) {
+      if (y === null) {
         anterior = null;
         continue;
       }

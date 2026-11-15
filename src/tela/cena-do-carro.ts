@@ -94,13 +94,13 @@ export class CenaCarro {
 
   private desenhar(agora: number): void {
     const { ctx, cena } = this;
-    if (!cena) return;
+    if (!cena || this.caixa.hidden) return;
     if (this.largura > 0) {
       ctx.clearRect(0, 0, this.largura, this.altura);
       if (cena.tipo === 'estrada') this.estrada(cena, this.instante(agora, cena.tempo));
       else this.roda(this.instante(agora, [0, 2 * Math.PI]));
     }
-    if (!this.calmo) this.quadro = requestAnimationFrame((proximo) => this.desenhar(proximo));
+    if (!this.calmo && !this.caixa.hidden) this.quadro = requestAnimationFrame((proximo) => this.desenhar(proximo));
   }
 
   private texto(conteudo: string, x: number, y: number, cor: string, alinhar: CanvasTextAlign = 'center', tamanho = 11): void {

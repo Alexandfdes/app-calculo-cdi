@@ -3,7 +3,7 @@
 :root {
   color-scheme: dark;
   --fundo: #070b18;
-  --painel: rgba(15, 22, 46, 0.72);
+  --painel: rgba(15, 22, 46, 0.86);
   --painel-borda: rgba(148, 163, 184, 0.16);
   --texto: #e6eaf5;
   --texto-suave: #a9b2c9;
@@ -44,12 +44,20 @@ body {
   overflow-x: hidden;
   font-family: var(--fonte);
   color: var(--texto);
+  background-color: var(--fundo);
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
   background:
-    radial-gradient(1100px 700px at 8% -10%, rgba(109, 74, 255, 0.3), transparent 60%),
-    radial-gradient(900px 600px at 105% 5%, rgba(34, 211, 238, 0.16), transparent 60%),
-    radial-gradient(900px 800px at 50% 115%, rgba(244, 114, 182, 0.14), transparent 60%),
-    var(--fundo);
-  background-attachment: fixed;
+    radial-gradient(1100px 700px at 8% -10%, rgba(109, 74, 255, 0.28), transparent 60%),
+    radial-gradient(900px 600px at 105% 5%, rgba(34, 211, 238, 0.15), transparent 60%),
+    radial-gradient(900px 800px at 50% 115%, rgba(244, 114, 182, 0.13), transparent 60%);
+  pointer-events: none;
+  transform: translateZ(0);
 }
 
 .so-leitor {
@@ -82,6 +90,8 @@ body {
   font-size: var(--tam);
   color: var(--cor);
   opacity: 0;
+  will-change: transform;
+  pointer-events: none;
   animation: subir var(--dur) linear var(--atraso) infinite;
 }
 
@@ -222,8 +232,8 @@ body {
   border-radius: var(--raio);
   background: var(--painel);
   box-shadow: var(--sombra);
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   animation: surgir 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
@@ -1557,8 +1567,8 @@ h2 {
   border-radius: var(--raio);
   background: var(--painel);
   box-shadow: var(--sombra);
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   line-height: 1.6;
   animation: surgir 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
   animation-delay: calc(min(var(--i), 8) * 60ms);
