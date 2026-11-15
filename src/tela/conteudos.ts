@@ -897,13 +897,17 @@ const integrais: Aula = {
     {
       titulo: 'Outras técnicas de integração',
       cor: '#fb923c',
-      html: `<p>Algumas integrais pedem técnicas que estão nos slides, mas fora das seis regras do projeto. A calculadora reconhece esses casos e diz qual técnica seria usada.</p>
+      html: `<p>Algumas integrais pedem técnicas que estão nos slides além das seis regras do projeto. A calculadora também resolve por partes, frações parciais e a arco-tangente, mostrando cada passo.</p>
       <ul>
         <li><strong>Por partes:</strong> ${m('#int u #dv = uv - #int v #du')}. Em ${m('#int x e^x #dx')}, com ${m('u = x')} e ${m('#dv = e^x #dx')}: ${m('x e^x - #int e^x #dx = e^x(x - 1) + C')}.</li>
-        <li><strong>Frações parciais:</strong> em ${m('#int #f{P(x)}{Q(x)} #dx')}, fatore ${m('Q')}, quebre em frações simples e integre termo a termo.</li>
+        <li><strong>Frações parciais:</strong> em ${m('#int #f{P(x)}{Q(x)} #dx')}, fatore ${m('Q')}, quebre em frações simples e integre termo a termo. Em ${m('#int #f{1}{x^2 - 1} #dx')}: ${m('#f{1}{2} ln|x - 1| - #f{1}{2} ln|x + 1| + C')}.</li>
+        <li><strong>Arco-tangente:</strong> ${m('#int #f{1}{1 + x^2} #dx = arctg x + C')}; com outro denominador sem raiz real, completa-se o quadrado.</li>
         <li><strong>Substituições trigonométricas:</strong> ${m('#r{a^2 - x^2}')} com ${m('x = a sen θ')}; ${m('#r{a^2 + x^2}')} com ${m('x = a tg θ')}; ${m('#r{x^2 - a^2}')} com ${m('x = a sec θ')}.</li>
       </ul>
-      ${calcular({ modo: 'integral', f: 'x*e^x', resposta: 'por partes' }, 'Ver o aviso da calculadora')}`,
+      <div class="botoes">${calcular({ modo: 'integral', f: 'x*e^x', resposta: 'e^x*(x - 1)' }, 'Calcular por partes')}${calcular(
+        { modo: 'integral', f: '1/(x^2 - 1)', resposta: 'ln(abs(x - 1))/2 - ln(abs(x + 1))/2' },
+        'Calcular as frações parciais',
+      )}${calcular({ modo: 'integral', f: '1/(1 + x^2)', resposta: 'arctg(x)' }, 'Calcular a arco-tangente')}</div>`,
     },
     {
       titulo: 'Erros comuns',

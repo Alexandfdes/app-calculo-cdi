@@ -97,10 +97,6 @@ function conferir(c: Conta): void {
       derivadaConfere(ler(c.f), ler(c.resposta), rotulo);
       return;
     case 'integral':
-      if (c.resposta === 'por partes') {
-        expect(() => integrar(c.f), rotulo).toThrow(/por partes/);
-        return;
-      }
       derivadaConfere(ler(c.resposta), ler(c.f), rotulo);
       diferemPorConstante(integrar(c.f).resultado, ler(c.resposta), rotulo);
       return;

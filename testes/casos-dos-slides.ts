@@ -269,7 +269,7 @@ export const integrais: CasoIntegral[] = [
   { id: 'I19', fonte: 'Substituição linear (u = −2x)', f: 'e^(-2*x)', esperado: '-e^(-2*x)/2', regras: ['substituição', 'exponencial'] },
 ];
 
-/** Técnicas que estão na Aula 4 mas fora da lista do projeto. Não precisam ser implementadas. */
+/** Técnicas que estão na Aula 4 além da lista do projeto: o motor também as resolve. */
 export const integraisForaDoEscopo: CasoIntegral[] = [
   { id: 'X01', fonte: 'Aula 4, quadro 6 (por partes)', f: 'x*e^x', esperado: 'e^x*(x - 1)', regras: [] },
   {

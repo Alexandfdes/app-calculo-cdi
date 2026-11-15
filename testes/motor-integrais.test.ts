@@ -6,8 +6,9 @@
 import { describe, expect, it } from 'vitest';
 import { derivar } from '../src/motor/derivadas';
 import { descreverIntegralDefinida, integralDefinida } from '../src/motor/definidas';
-import { ErroDeEntrada, paraTexto } from '../src/motor/expressao';
+import { ErroDeEntrada, avaliar, lerExpressao, paraTexto } from '../src/motor/expressao';
 import { descreverPasso, integrar } from '../src/motor/integrais';
+import type { RegraIntegral } from '../src/motor/integrais';
 import { REGRAS_INTEGRACAO, integrais, integraisDefinidas, integraisForaDoEscopo } from './casos-dos-slides';
 import type { Intervalo } from './casos-dos-slides';
 import { equivalentes, validaIntegral } from './oraculo';
@@ -234,17 +235,42 @@ describe('Integral imprópria com limite infinito', () => {
   });
 });
 
-describe('Técnicas fora do projeto: o motor avisa em vez de errar', () => {
+describe('Técnicas além da lista do projeto: por partes, frações parciais e arco-tangente', () => {
   for (const c of integraisForaDoEscopo) {
-    it(`${c.id}: ∫ ${c.f} dx (${c.fonte})`, () => expect(() => integrar(c.f)).toThrow(ErroDeEntrada));
+    it(`${c.id}: ∫ ${c.f} dx (${c.fonte})`, () => expect(integrar(c.f).regrasUsadas.length).toBeGreaterThan(0));
   }
 
+  const tecnicas: [string, string, RegraIntegral][] = [
+    ['x*e^x', 'x*e^x - e^x', 'por partes'],
+    ['ln(x)', 'x*ln(x) - x', 'por partes'],
+    ['x^2*sen(x)', '-x^2*cos(x) + 2*x*sen(x) + 2*cos(x)', 'por partes'],
+    ['arctg(x)', 'x*arctg(x) - ln(1 + x^2)/2', 'por partes'],
+    ['1/(x^2 + 1)', 'arctg(x)', 'arco-tangente'],
+    ['1/(x^2 + 2*x + 5)', 'arctg((x + 1)/2)/2', 'arco-tangente'],
+    ['(x + 2)/(x^2 + 4)', 'ln(x^2 + 4)/2 + arctg(x/2)', 'frações parciais'],
+    ['(2*x + 3)/(x^2 - 1)', '5/2*ln(abs(x - 1)) - 1/2*ln(abs(x + 1))', 'frações parciais'],
+    ['1/(x^2*(x + 1))', '-ln(abs(x)) - 1/x + ln(abs(x + 1))', 'frações parciais'],
+    ['1/(x*(x^2 + 1))', 'ln(abs(x)) - ln(x^2 + 1)/2', 'frações parciais'],
+  ];
+  for (const [f, primitiva, regra] of tecnicas) {
+    it(`∫ ${f} dx = ${primitiva} + C, por ${regra}`, () => {
+      const r = integrar(f);
+      expect(r.regrasUsadas).toContain(regra);
+      const d = derivar(r.resultado).resultado;
+      const [g, F] = [lerExpressao(f), lerExpressao(primitiva)];
+      for (const t of [0.37, 1.7, 2.9, -0.6, -2.3]) {
+        const esperado = avaliar(g, { x: t });
+        if (!Number.isFinite(esperado)) continue;
+        expect(avaliar(d, { x: t })).toBeCloseTo(esperado, 8);
+        // a primitiva do motor e a esperada diferem por uma constante
+        expect(avaliar(r.resultado, { x: t }) - avaliar(F, { x: t })).toBeCloseTo(avaliar(r.resultado, { x: 1.7 }) - avaliar(F, { x: 1.7 }), 8);
+      }
+    });
+  }
+});
+
+describe('O que continua de fora: o motor avisa em vez de errar', () => {
   const avisos: [string, RegExp][] = [
-    ['x*e^x', /por partes/],
-    ['1/(x^2 + 1)', /arco-tangente/],
-    ['(x + 2)/(x^2 + 4)', /arco-tangente/],
-    ['(2*x + 3)/(x^2 - 1)', /frações parciais/],
-    ['ln(x)', /por partes/],
     ['sen(x)^2', /identidades trigonométricas/],
     ['abs(x)', /integral definida/],
     ['x^x', /fora do conteúdo/],

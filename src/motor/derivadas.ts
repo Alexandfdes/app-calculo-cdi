@@ -156,6 +156,8 @@ function derivadaExterna(nome: NomeFuncao, u: Expr): Expr {
       return div(num(1), mul(num(2), func('raiz', u))); // √u = u^(1/2): regra da potência
     case 'abs':
       return div(u, func('abs', u)); // não existe onde u = 0 (o "bico" do |x|)
+    case 'arctg':
+      return div(num(1), soma(num(1), pot(u, num(2))));
   }
 }
 

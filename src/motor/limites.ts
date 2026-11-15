@@ -15,6 +15,7 @@ import { isConditionalNode, isOperatorNode, isParenthesisNode, isSymbolNode, par
 import type { MathNode } from 'mathjs';
 import { E, ErroDeEntrada, PI, avaliar, contem, div, fracaoDeIndiceImpar, func, iguais, lerExpressao, mul, neg, num, paraTexto, pot, potenciaReal, soma, sub, trocar, variavel } from './expressao';
 import type { Expr, NomeFuncao } from './expressao';
+import { derivar } from './derivadas';
 import { numeroParaLer } from './numeros';
 import { comoPolinomio, dividirPorRaiz, grau, lider, paraExpr, zeraEm } from './polinomios';
 import type { Polinomio } from './polinomios';
@@ -39,7 +40,8 @@ export type TecnicaLimite =
   | 'limites laterais'
   | 'continuidade'
   | 'ordem de crescimento'
-  | 'mudança de variável';
+  | 'mudança de variável'
+  | 'L’Hôpital';
 
 export interface PassoLimite {
   tecnica: TecnicaLimite;
@@ -289,8 +291,66 @@ function limite(e: Expr, alvo: Alvo, ctx: Contexto): Valor {
     const c = conjugadoNoInfinito(e.a, e.b, alvo, dentro);
     if (c) return c;
   }
-  if ('infinito' in alvo) return porCrescimento(e, alvo.infinito, dentro) ?? v;
-  return v;
+  if ('infinito' in alvo) {
+    const c = porCrescimento(e, alvo.infinito, dentro);
+    if (c) return c;
+  }
+  return pelaDerivada(e, v.forma, alvo, dentro) ?? v;
+}
+
+// ─── Último recurso: a regra de L'Hôpital ──────────────────────────────────────
+
+/**
+ * Formas que as técnicas da Aula 2 não desfazem: 0/0 e ∞/∞ vão para L'Hôpital; 0·∞ vira ∞/∞
+ * (x·ln x = ln x / (1/x)); e potências com x na base e no expoente, como xˣ, viram e^(x·ln x).
+ */
+function pelaDerivada(e: Expr, forma: string, alvo: Alvo, ctx: Contexto): Valor | null {
+  if (ctx.profundidade > 40) return null;
+  if (e.tipo === 'div' && (forma === '0/0' || forma === '∞/∞')) return lHopital(e.a, e.b, forma, alvo, ctx);
+  if (e.tipo === 'mul' && forma === '0 · ∞') {
+    const la = limiteDireto(e.a, alvo, ctx);
+    const [vaiAZero, vaiAoInfinito] = la.tipo === 'finito' && la.v === 0 ? [e.a, e.b] : [e.b, e.a];
+    return lHopital(vaiAoInfinito, div(num(1), vaiAZero), '∞/∞', alvo, ctx);
+  }
+  if (e.tipo === 'pot' && contem(e.base, ctx.x) && contem(e.exp, ctx.x)) {
+    const expoente = simplificar(mul(e.exp, func('ln', e.base)));
+    const antes = ctx.passos.length;
+    registrar(ctx, 'L’Hôpital', `Com ${ctx.x} na base e no expoente, escreve-se ${paraTexto(e)} = e^(${paraTexto(expoente)}) e calcula-se o limite do expoente.`);
+    const L = limite(expoente, alvo, ctx);
+    if (L.tipo === 'finito') return finito(Math.exp(L.v));
+    if (L.tipo === 'infinito') return L.sinal > 0 ? infinito(1) : finito(0);
+    if (L.tipo === 'sem valor') return L;
+    ctx.passos.length = antes;
+    return null;
+  }
+  return null;
+}
+
+/** lim N/D = lim N′/D′ quando N/D é 0/0 ou ∞/∞ (e o novo limite existe). */
+function lHopital(N: Expr, D: Expr, forma: string, alvo: Alvo, ctx: Contexto): Valor | null {
+  let dN: Expr;
+  let dD: Expr;
+  try {
+    dN = derivar(N, ctx.x).resultado;
+    dD = derivar(D, ctx.x).resultado;
+  } catch {
+    return null;
+  }
+  const nova = simplificar(div(dN, dD));
+  if (iguais(nova, simplificar(div(N, D)))) return null;
+  const antes = ctx.passos.length;
+  registrar(
+    ctx,
+    'L’Hôpital',
+    `Regra de L'Hôpital: a forma é ${forma}, então o limite é o mesmo do quociente das derivadas, ${paraTexto(dN)} sobre ${paraTexto(dD)}.`,
+    [div(N, D), div(dN, dD), nova],
+  );
+  const r = limite(nova, alvo, ctx);
+  if (r.tipo === 'indeterminada') {
+    ctx.passos.length = antes;
+    return null;
+  }
+  return r;
 }
 
 function limiteDireto(e: Expr, alvo: Alvo, ctx: Contexto): Valor {
@@ -520,6 +580,10 @@ function funcao(nome: NomeFuncao, arg: Expr, alvo: Alvo, ctx: Contexto): Valor {
       }
       if (L.tipo === 'infinito') return L.sinal > 0 ? infinito(1) : { tipo: 'sem valor' };
       return indeterminada('raiz de uma oscilação');
+    case 'arctg':
+      if (L.tipo === 'finito') return finito(Math.atan(L.v));
+      if (L.tipo === 'infinito') return finito((L.sinal * Math.PI) / 2, simplificar(L.sinal > 0 ? div(PI, num(2)) : neg(div(PI, num(2)))));
+      return { tipo: 'oscila', limitada: true };
     default:
       return indeterminada(`${nome} de um limite`);
   }
@@ -1081,7 +1145,7 @@ function publico(v: Valor): ValorLimite {
       return 'sem valor';
     case 'indeterminada':
       throw new ErroDeEntrada(
-        `Esse limite cai na forma indeterminada ${v.forma}, e o motor ainda não tem técnica para ela. As técnicas da Aula 2 que ele usa são substituição direta, fatoração, racionalização, limites fundamentais, módulo, confronto e as regras do infinito.`,
+        `Esse limite cai na forma indeterminada ${v.forma}, e o motor ainda não tem técnica para ela. Ele usa substituição direta, fatoração, racionalização, limites fundamentais, módulo, confronto, as regras do infinito e a regra de L'Hôpital.`,
       );
   }
 }

@@ -8,9 +8,10 @@
  * Regras: as seis da lista do projeto (constante, potência, soma/subtração, exponencial,
  * trigonométrica e substituição), mais o múltiplo constante e ∫ 1/x dx = ln|x|, a exceção
  * da potência (quadros 2, 3 e 9). Antes de desistir, o integrando é reescrito com álgebra:
- * distributiva, propriedades das potências e divisão de polinômios. Por partes, frações
- * parciais e identidades trigonométricas estão na aula, mas fora da lista do projeto: o
- * motor avisa em vez de dar resposta errada.
+ * distributiva, propriedades das potências e divisão de polinômios. Também sabe as técnicas
+ * da aula que vão além da lista: integração por partes (quadro 6), frações parciais
+ * (quadro 7) e a arco-tangente, ∫ 1/(1 + x²) dx = arctg x. As identidades trigonométricas
+ * (sen²x) ficam de fora: o motor avisa em vez de dar resposta errada.
  */
 import { derivar } from './derivadas';
 import {
@@ -46,7 +47,10 @@ export type RegraIntegral =
   | 'trigonométrica'
   | 'substituição'
   | 'reescrita'
-  | 'simplificação';
+  | 'simplificação'
+  | 'por partes'
+  | 'frações parciais'
+  | 'arco-tangente';
 
 /** A troca de variável do quadro 5: u = g(x) e du = g'(x) dx. */
 export interface Substituicao {
@@ -60,6 +64,14 @@ export interface Substituicao {
   volta?: { emU: Expr; emX: Expr };
 }
 
+/** A escolha da integração por partes: ∫ u dv = u·v − ∫ v du. */
+export interface Partes {
+  u: Expr;
+  dv: Expr;
+  du: Expr;
+  v: Expr;
+}
+
 export interface PassoIntegral {
   regra: RegraIntegral;
   /** O integrando deste passo; a variável de integração é `variavel` (x, ou u numa substituição). */
@@ -69,6 +81,8 @@ export interface PassoIntegral {
   expansao: Expr;
   /** Só na regra da substituição. */
   substituicao?: Substituicao;
+  /** Só na integração por partes. */
+  partes?: Partes;
 }
 
 export interface ResultadoIntegral {
@@ -89,7 +103,7 @@ export function integrar(entrada: string | Expr, x = 'x'): ResultadoIntegral {
   let profundidade = 0;
   const I = (e: Expr, v: string): Expr => {
     if (++profundidade > PROFUNDIDADE_MAXIMA) throw new ErroDeEntrada('Essa integral é comprida demais para o motor.');
-    const { regra, expansao, substituicao } = aplicarRegra(e, v);
+    const { regra, expansao, substituicao, partes } = aplicarRegra(e, v);
     // Passo final (sem pendências) aparece simplificado; os outros, na forma do slide.
     const passo: PassoIntegral = {
       regra,
@@ -98,6 +112,7 @@ export function integrar(entrada: string | Expr, x = 'x'): ResultadoIntegral {
       expansao: temPendencia(expansao) ? expansao : simplificar(expansao),
     };
     if (substituicao) passo.substituicao = substituicao;
+    if (partes) passo.partes = partes;
     passos.push(passo);
     const resolvida = resolver(expansao, I);
     profundidade--;
@@ -122,6 +137,9 @@ const NOMES: Record<RegraIntegral, string> = {
   substituição: 'Substituição',
   reescrita: 'Reescrever antes de integrar',
   simplificação: 'Simplificação',
+  'por partes': 'Integração por partes',
+  'frações parciais': 'Frações parciais',
+  'arco-tangente': 'Integral da arco-tangente',
 };
 
 /** O integrando com parênteses quando é soma ou diferença: ∫ (x + 1) dx. */
@@ -150,6 +168,7 @@ interface Aplicacao {
   regra: RegraIntegral;
   expansao: Expr;
   substituicao?: Substituicao;
+  partes?: Partes;
 }
 
 function aplicarRegra(e: Expr, v: string): Aplicacao {
@@ -229,6 +248,7 @@ function funcaoDaTabela(nome: NomeFuncao, x: Expr): Aplicacao | null {
       return { regra: 'potência', expansao: primitivaDaPotencia(x, [1, 2]) }; // √x = x^(1/2)
     case 'ln':
     case 'abs':
+    case 'arctg':
       return null;
   }
 }
@@ -296,8 +316,262 @@ function outrasTecnicas(e: Expr, v: string): Aplicacao {
   if (!vale(k, 1)) return { regra: 'múltiplo constante', expansao: mul(k, integral(resto, v)) };
   const simplificada = simplificar(e);
   if (!iguais(simplificada, e)) return { regra: 'simplificação', expansao: integral(simplificada, v) };
+  const parciais = fracoesParciais(e, v);
+  if (parciais) return parciais;
+  const partes = porPartes(e, v);
+  if (partes) return partes;
   throw new ErroDeEntrada(semRegra(e, v));
 }
+
+// ─── Integração por partes (quadro 6) ──────────────────────────────────────────
+
+/**
+ * ∫ u dv = u·v − ∫ v du. A escolha de u segue o LIATE: primeiro o logaritmo ou a arco-tangente
+ * (que viram algébricas ao derivar), depois o polinômio (que desce de grau a cada passo), com
+ * dv sendo a exponencial, o seno ou o cosseno. Assim a nova integral é sempre mais simples.
+ */
+function porPartes(e: Expr, v: string): Aplicacao | null {
+  const lista = fatoresDeCima(e);
+  if (!lista) return null;
+  const logaritmica = (f: Expr): boolean => (f.tipo === 'func' && (f.nome === 'ln' || f.nome === 'arctg')) || f.tipo === 'log';
+  const naoPolinomio = (f: Expr): boolean => contem(f, v) && !polinomio(f, v);
+  const escolher = (): number => {
+    const outros = lista.filter(naoPolinomio);
+    const i = lista.findIndex((f) => logaritmica(f) && contem(f, v));
+    if (i >= 0 && outros.length === 1) return i;
+    const j = lista.findIndex((f) => contem(f, v) && polinomio(f, v));
+    if (j >= 0 && outros.length === 1 && dvSimples(outros[0]!, v)) return j;
+    return -1;
+  };
+  const i = escolher();
+  if (i < 0) return null;
+  const u = lista[i]!;
+  const dv = simplificar(lista.filter((_, k) => k !== i).reduce<Expr>((p, q) => mul(p, q), num(1)));
+  const du = derivadaDe(u, v);
+  if (!du) return null;
+  let V: Expr;
+  try {
+    V = integrar(dv, v).resultado;
+  } catch {
+    return null;
+  }
+  const nova = simplificar(mul(V, du));
+  if (iguais(nova, e)) return null;
+  return { regra: 'por partes', expansao: sub(mul(u, V), integral(nova, v)), partes: { u, dv, du, v: V } };
+}
+
+/** O que serve de dv no LIATE: eˣ, aˣ, sen e cos de um argumento do 1.º grau. */
+function dvSimples(f: Expr, v: string): boolean {
+  const linear = (a: Expr): boolean => {
+    const p = comoPotencias(a, v);
+    const c = p && coeficientes(p);
+    return !!c && c.length === 2;
+  };
+  if (f.tipo === 'pot' && !contem(f.base, v)) return linear(f.exp);
+  if (f.tipo === 'func' && (f.nome === 'sen' || f.nome === 'cos')) return linear(f.arg);
+  return false;
+}
+
+/** Os fatores de um produto sem quociente; null se houver divisão. */
+function fatoresDeCima(e: Expr): Expr[] | null {
+  if (e.tipo === 'mul') {
+    const [a, b] = [fatoresDeCima(e.a), fatoresDeCima(e.b)];
+    return a && b ? [...a, ...b] : null;
+  }
+  if (e.tipo === 'div') return null;
+  return [e];
+}
+
+// ─── Frações parciais (quadro 7) e arco-tangente ───────────────────────────────
+
+/**
+ * R(x)/Q(x), com grau de R menor que o de Q, vira soma de frações simples: A/(x − r)ᵏ para
+ * cada raiz racional r de Q e (Bx + C)/(ax² + bx + c) para o fator de grau 2 sem raiz real.
+ * Os coeficientes saem de um sistema linear resolvido em frações exatas.
+ */
+function fracoesParciais(e: Expr, v: string): Aplicacao | null {
+  if (e.tipo !== 'div') return null;
+  const [cima, baixo] = [comoPotencias(e.a, v), comoPotencias(e.b, v)];
+  const R = cima && coeficientes(cima);
+  const Q = baixo && coeficientes(baixo);
+  if (!R || !Q || Q.length < 2 || R.length >= Q.length) return null;
+  const x = variavel(v);
+  // grau 2 sem raiz real: completa o quadrado e cai na arco-tangente
+  if (Q.length === 3) {
+    const [c, b, a] = Q.map(valorF) as [number, number, number];
+    if (b * b - 4 * a * c < 0) return quadraticaSemRaiz(R, Q, e.b, v);
+  }
+  const fatorado = fatorar(Q);
+  if (!fatorado) return null;
+  const { raizes, sobra } = fatorado;
+  // cada fração simples e o polinômio que multiplica o seu numerador quando se tira o mínimo
+  const termos: { base: Fracao[]; denominador: Expr; linear: boolean }[] = [];
+  const porRaiz = (r: Fracao): Fracao[] => [[-r[0], r[1]], [1, 1]];
+  for (const { r, m } of raizes) {
+    const xr = r[0] === 0 ? x : r[0] < 0 ? soma(x, fracaoExpr([-r[0], r[1]])) : sub(x, fracaoExpr(r));
+    for (let k = 1; k <= m; k++) {
+      let base: Fracao[] = sobra;
+      for (const outra of raizes) {
+        const vezes = outra === raizes.find((z) => z.r === r) ? m - k : outra.m;
+        for (let j = 0; j < vezes; j++) base = multiplicarC(base, porRaiz(outra.r));
+      }
+      termos.push({ base, denominador: k === 1 ? xr : pot(xr, num(k)), linear: false });
+    }
+  }
+  if (sobra.length === 3) {
+    let base: Fracao[] = [[1, 1]];
+    for (const { r, m } of raizes) for (let j = 0; j < m; j++) base = multiplicarC(base, porRaiz(r));
+    const q = paraExpressao(dosCoeficientes(sobra), v);
+    termos.push({ base: multiplicarC(base, [[0, 1], [1, 1]]), denominador: q, linear: true });
+    termos.push({ base, denominador: q, linear: false });
+  } else if (sobra.length !== 1) {
+    return null;
+  }
+  if (termos.length < 2) return null; // um fator só: a substituição ou a potência resolvem
+  const n = Q.length - 1;
+  const matriz = Array.from({ length: n }, (_, linha) => [
+    ...termos.map((t): Fracao => t.base[linha] ?? [0, 1]),
+    R[linha] ?? ([0, 1] as Fracao),
+  ]);
+  const solucao = resolverSistema(matriz);
+  if (!solucao) return null;
+  const parcelas: Expr[] = [];
+  for (let i = 0; i < termos.length; i++) {
+    const t = termos[i]!;
+    const k = solucao[i]!;
+    if (t.linear) {
+      // Bx/q e C/q ficam no mesmo denominador
+      const C = solucao[i + 1]!;
+      i++;
+      if (k[0] === 0 && C[0] === 0) continue;
+      parcelas.push(div(simplificar(soma(mul(fracaoExpr(k), x), fracaoExpr(C))), t.denominador));
+      continue;
+    }
+    if (k[0] !== 0) parcelas.push(div(fracaoExpr(k), t.denominador));
+  }
+  if (parcelas.length < 2) return null;
+  const expansao = parcelas.map((p) => integral(p, v)).reduce((a, b) => soma(a, b));
+  return { regra: 'frações parciais', expansao };
+}
+
+/**
+ * ∫ (Bx + C)/(ax² + bx + c) dx sem raiz real: a parte com 2ax + b em cima sai por substituição,
+ * num ln, e o resto D/(ax² + bx + c), completando o quadrado, dá (2D/√Δ)·arctg((2ax + b)/√Δ),
+ * com Δ = 4ac − b².
+ */
+function quadraticaSemRaiz(R: Fracao[], Q: Fracao[], denominador: Expr, v: string): Aplicacao {
+  const x = variavel(v);
+  const [c, b, a] = Q as [Fracao, Fracao, Fracao];
+  const B = R[1] ?? ([0, 1] as Fracao);
+  const C = R[0] ?? ([0, 1] as Fracao);
+  const divF = (p: Fracao, q: Fracao): Fracao => vezesF(p, fracao(q[1], q[0]));
+  const doisA = vezesF([2, 1], a);
+  const derivadaDeQ = simplificar(soma(mul(fracaoExpr(doisA), x), fracaoExpr(b)));
+  const D = somaF(C, vezesF([-1, 1], divF(vezesF(B, b), doisA))); // C − B·b/(2a)
+  const delta = somaF(vezesF([4, 1], vezesF(a, c)), vezesF([-1, 1], vezesF(b, b))); // 4ac − b²
+  const exata = raizExata(delta);
+  // com √Δ exata, tudo vira fração: 1/(x² + 1) dá arctg x, e não 2·arctg(2x/√4)/√4
+  const arco = exata
+    ? simplificar(
+        mul(
+          fracaoExpr(divF(vezesF([2, 1], D), exata)),
+          func('arctg', soma(mul(fracaoExpr(divF(doisA, exata)), x), fracaoExpr(divF(b, exata)))),
+        ),
+      )
+    : simplificar(mul(div(fracaoExpr(vezesF([2, 1], D)), func('raiz', fracaoExpr(delta))), func('arctg', div(derivadaDeQ, func('raiz', fracaoExpr(delta))))));
+  if (B[0] === 0) return { regra: 'arco-tangente', expansao: arco };
+  const parteLn = mul(fracaoExpr(divF(B, doisA)), integral(div(derivadaDeQ, denominador), v));
+  if (D[0] === 0) return { regra: 'frações parciais', expansao: parteLn };
+  return { regra: 'frações parciais', expansao: soma(parteLn, integral(div(fracaoExpr(D), denominador), v)) };
+}
+
+/** √(p/q) como fração, quando p e q são quadrados perfeitos. */
+function raizExata([p, q]: Fracao): Fracao | null {
+  const [rp, rq] = [Math.round(Math.sqrt(p)), Math.round(Math.sqrt(q))];
+  return p > 0 && rp * rp === p && rq * rq === q ? fracao(rp, rq) : null;
+}
+
+const fracaoExpr = ([p, q]: Fracao): Expr => {
+  const cima = q === 1 ? num(Math.abs(p)) : div(num(Math.abs(p)), num(q));
+  return p < 0 ? neg(cima) : cima;
+};
+
+function multiplicarC(p: Fracao[], q: Fracao[]): Fracao[] {
+  const r: Fracao[] = Array.from({ length: p.length + q.length - 1 }, (): Fracao => [0, 1]);
+  p.forEach((a, i) => q.forEach((b, j) => (r[i + j] = somaF(r[i + j]!, vezesF(a, b)))));
+  return r;
+}
+
+/** As raízes racionais de Q, com multiplicidade, e o que sobra: uma constante ou um grau 2 sem raiz real. */
+function fatorar(Q: Fracao[]): { raizes: { r: Fracao; m: number }[]; sobra: Fracao[] } | null {
+  let resto = Q;
+  const raizes: { r: Fracao; m: number }[] = [];
+  const valorEm = (P: Fracao[], r: Fracao): Fracao => P.reduceRight<Fracao>((acc, c) => somaF(vezesF(acc, r), c), [0, 1]);
+  const divisores = (k: number): number[] => {
+    const m = Math.abs(k);
+    if (m > 1e5) return [];
+    const d: number[] = [];
+    for (let i = 1; i <= m; i++) if (m % i === 0) d.push(i);
+    return d;
+  };
+  while (resto.length > 1) {
+    const mmc = resto.reduce((m, [, q]) => (m * q) / mdc(m, q), 1);
+    const inteiros = resto.map(([p, q]) => (p * mmc) / q);
+    const [a0, an] = [inteiros[0]!, inteiros[inteiros.length - 1]!];
+    let achada: Fracao | null = a0 === 0 ? [0, 1] : null;
+    if (!achada) {
+      busca: for (const p of divisores(a0)) {
+        for (const q of divisores(an)) {
+          for (const r of [fracao(p, q), fracao(-p, q)]) {
+            if (valorEm(resto, r)[0] === 0) {
+              achada = r;
+              break busca;
+            }
+          }
+        }
+      }
+    }
+    if (!achada) break;
+    const raiz = achada;
+    const d = dividirPolinomios(resto, [[-raiz[0], raiz[1]], [1, 1]]);
+    if (!d) return null;
+    resto = d.S;
+    const ja = raizes.find((z) => z.r[0] === raiz[0] && z.r[1] === raiz[1]);
+    if (ja) ja.m++;
+    else raizes.push({ r: raiz, m: 1 });
+  }
+  if (resto.length > 3 || resto.length === 2) return null;
+  if (resto.length === 3) {
+    const [c, b, a] = resto.map(valorF) as [number, number, number];
+    if (b * b - 4 * a * c >= 0) return null; // raízes irracionais: fora do alcance
+  }
+  return { raizes, sobra: resto };
+}
+
+/** Eliminação de Gauss em frações exatas; a última coluna é o lado direito. */
+function resolverSistema(m: Fracao[][]): Fracao[] | null {
+  const n = m.length;
+  const a = m.map((linha) => linha.map((c): Fracao => [c[0], c[1]]));
+  for (let col = 0; col < n; col++) {
+    const piv = a.findIndex((linha, i) => i >= col && linha[col]![0] !== 0);
+    if (piv < 0) return null;
+    [a[col], a[piv]] = [a[piv]!, a[col]!];
+    const p = a[col]!;
+    const inv = fracao(p[col]![1], p[col]![0]);
+    for (let j = col; j <= n; j++) p[j] = vezesF(p[j]!, inv);
+    for (let i = 0; i < n; i++) {
+      const f = a[i]![col]!;
+      if (i === col || f[0] === 0) continue;
+      for (let j = col; j <= n; j++) {
+        const novo = somaF(a[i]![j]!, vezesF([-f[0], f[1]], p[j]!));
+        if (!exata(novo)) return null;
+        a[i]![j] = novo;
+      }
+    }
+  }
+  return a.map((linha) => linha[n]!);
+}
+
 
 // ─── Substituição (quadro 5) ───────────────────────────────────────────────────
 
@@ -703,7 +977,7 @@ function semRegra(e: Expr, v: string): string {
   if (e.tipo === 'mul' && fatores(e).some((f) => polinomio(f, v)) && fatores(e).some((f) => transcendente(f, v))) {
     return foraDoProjeto('integração por partes', 'quadro 6');
   }
-  return `Não encontrei uma regra da Aula 4 para ${texto}. O motor usa: constante, potência, soma e diferença, múltiplo constante, exponencial, trigonométricas e substituição.`;
+  return `Não encontrei uma regra da Aula 4 para ${texto}. O motor usa: constante, potência, soma e diferença, múltiplo constante, exponencial, trigonométricas, substituição, integração por partes, frações parciais e arco-tangente.`;
 }
 
 /** Polinômio em v: números, v, somas, produtos e potências com expoente natural. */

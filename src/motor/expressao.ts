@@ -7,7 +7,7 @@
 import { isConstantNode, isFunctionNode, isOperatorNode, isParenthesisNode, isSymbolNode, parse } from 'mathjs';
 import type { MathNode } from 'mathjs';
 
-export type NomeFuncao = 'sen' | 'cos' | 'tg' | 'cotg' | 'sec' | 'csc' | 'ln' | 'raiz' | 'abs';
+export type NomeFuncao = 'sen' | 'cos' | 'tg' | 'cotg' | 'sec' | 'csc' | 'ln' | 'raiz' | 'abs' | 'arctg';
 
 export type Expr =
   | { tipo: 'num'; valor: number }
@@ -150,6 +150,7 @@ const FUNCOES = new Map<string, NomeFuncao | 'exp' | 'log'>(Object.entries({
   ln: 'ln',
   raiz: 'raiz', sqrt: 'raiz',
   abs: 'abs',
+  arctg: 'arctg', atan: 'arctg', arctan: 'arctg',
   exp: 'exp',
   log: 'log',
 }) as [string, NomeFuncao | 'exp' | 'log'][]);
@@ -412,6 +413,8 @@ function funcaoNumerica(nome: NomeFuncao, t: number): number {
       return Math.sqrt(t);
     case 'abs':
       return Math.abs(t);
+    case 'arctg':
+      return Math.atan(t);
   }
 }
 
