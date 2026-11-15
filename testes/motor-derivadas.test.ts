@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { derivar, descreverPasso } from '../src/motor/derivadas';
-import { ErroDeEntrada, lerExpressao, paraTexto } from '../src/motor/expressao';
+import { ErroDeEntrada, avaliar, lerExpressao, paraTexto } from '../src/motor/expressao';
 import { derivadas } from './casos-dos-slides';
 import { equivalentes } from './oraculo';
 
@@ -36,6 +36,19 @@ describe('O resultado sai simplificado (Aula 3, quadro 8: "não simplificar a ex
   for (const [f, forma] of formas) {
     it(`(${f})' = ${forma}`, () => expect(paraTexto(derivar(f).resultado)).toBe(forma));
   }
+});
+
+describe('Potência de potência', () => {
+  it('(x²)^0.5 = |x|: a derivada é x/|x|, −1 para x < 0, e não 1', () => {
+    const r = derivar('(x^2)^0.5');
+    expect(avaliar(r.resultado, { x: -2 })).toBeCloseTo(-1, 12);
+    expect(avaliar(r.resultado, { x: 3 })).toBeCloseTo(1, 12);
+  });
+
+  it('com expoente inteiro a conta junta: (x^(1/2))^2 = x e (x²)³ = x⁶', () => {
+    expect(paraTexto(derivar('(x^2)^3').resultado)).toBe('6*x^5');
+    expect(avaliar(derivar('(x^(1/2))^2').resultado, { x: 2 })).toBeCloseTo(1, 12);
+  });
 });
 
 describe('Passo a passo', () => {

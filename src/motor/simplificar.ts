@@ -95,7 +95,13 @@ function potencia(base: Expr, exp: Expr): Expr {
   if (vale(exp, 1)) return base;
   if (vale(base, 1)) return num(1);
   if (ehNum(base) && ehNum(exp) && Number.isInteger(exp.valor) && exp.valor > 0) return num(base.valor ** exp.valor);
-  if (base.tipo === 'pot' && ehNum(base.exp) && ehNum(exp)) return potencia(base.base, num(base.exp.valor * exp.valor));
+  // (uᵃ)ᵇ = u^(ab) só quando vale para todo u: com b inteiro, com a fora dos pares, ou com ab par.
+  // (x²)^0.5 é |x|, e não x; já (x⁴)^0.5 = x².
+  if (base.tipo === 'pot' && ehNum(base.exp) && ehNum(exp)) {
+    const [a, b] = [base.exp.valor, exp.valor];
+    const par = (n: number): boolean => Number.isInteger(n) && n % 2 === 0;
+    if (Number.isInteger(b) || !par(a) || par(a * b)) return potencia(base.base, num(a * b));
+  }
   if (ehNum(exp) && exp.valor < 0) return monomio(div(num(1), potencia(base, num(-exp.valor)))); // x⁻ⁿ = 1/xⁿ
   if (vale(exp, 0.5) || (exp.tipo === 'div' && vale(exp.a, 1) && vale(exp.b, 2))) return func('raiz', base); // u^(1/2) = √u
   return pot(base, exp);
