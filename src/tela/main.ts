@@ -219,6 +219,7 @@ const ETIQUETAS: Record<Etiqueta, { nome: string; cor: string }> = {
   exponencial: { nome: 'Exponencial', cor: '#4ade80' },
   trigonométrica: { nome: 'Trigonométrica', cor: '#fb7185' },
   substituição: { nome: 'Substituição', cor: '#e879f9' },
+  reescrita: { nome: 'Reescrita', cor: '#c084fc' },
   simplificação: { nome: 'Simplificação', cor: '#94a3b8' },
   primitiva: { nome: 'Primitiva', cor: '#a78bfa' },
   tfc: { nome: 'Teorema Fundamental', cor: '#facc15' },
@@ -475,7 +476,10 @@ function passoDaIntegral(p: PassoIntegral): ItemPasso {
   const s = p.substituicao;
   if (!s) return { etiqueta: p.regra, html: conta + (temPendencia(p.expansao) ? '' : MAIS_C) };
   const u = `<i class="v">${escapar(s.variavel)}</i>`;
-  const troca = `<span class="troca">${u}${IGUAL}${formulaHTML(s.u)}, d${u}${IGUAL}${formulaHTML(s.du)} d${v}</span>`;
+  // du = dx, e não du = 1 dx; soma vai entre parênteses: du = (2x + 1) dx
+  const parenteses = s.du.tipo === 'soma' || s.du.tipo === 'sub';
+  const du = s.du.tipo === 'num' && s.du.valor === 1 ? `d${v}` : `${parenteses ? '(' : ''}${formulaHTML(s.du)}${parenteses ? ')' : ''} d${v}`;
+  const troca = `<span class="troca">${u}${IGUAL}${formulaHTML(s.u)}, d${u}${IGUAL}${du}</span>`;
   const volta = s.volta ? `${IGUAL}${formulaHTML(s.volta.emU)}${MAIS_C}${IGUAL}${formulaHTML(s.volta.emX)}${MAIS_C}` : '';
   return { etiqueta: 'substituição', html: `${troca}<br>${conta}${volta}` };
 }

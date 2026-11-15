@@ -7,8 +7,10 @@
  *
  * Regras: as seis da lista do projeto (constante, potência, soma/subtração, exponencial,
  * trigonométrica e substituição), mais o múltiplo constante e ∫ 1/x dx = ln|x|, a exceção
- * da potência (quadros 2, 3 e 9). Por partes, frações parciais e identidades trigonométricas
- * estão na aula, mas fora da lista do projeto: o motor avisa em vez de dar resposta errada.
+ * da potência (quadros 2, 3 e 9). Antes de desistir, o integrando é reescrito com álgebra:
+ * distributiva, propriedades das potências e divisão de polinômios. Por partes, frações
+ * parciais e identidades trigonométricas estão na aula, mas fora da lista do projeto: o
+ * motor avisa em vez de dar resposta errada.
  */
 import { derivar } from './derivadas';
 import {
@@ -43,6 +45,7 @@ export type RegraIntegral =
   | 'exponencial'
   | 'trigonométrica'
   | 'substituição'
+  | 'reescrita'
   | 'simplificação';
 
 /** A troca de variável do quadro 5: u = g(x) e du = g'(x) dx. */
@@ -117,6 +120,7 @@ const NOMES: Record<RegraIntegral, string> = {
   exponencial: 'Integral da exponencial',
   trigonométrica: 'Integral trigonométrica',
   substituição: 'Substituição',
+  reescrita: 'Reescrever antes de integrar',
   simplificação: 'Simplificação',
 };
 
@@ -132,7 +136,8 @@ export function descreverPasso(p: PassoIntegral): string {
   const integralDoPasso = `∫ ${textoDoIntegrando(p.integrando)} d${p.variavel}`;
   const s = p.substituicao;
   if (s) {
-    const troca = `${s.variavel} = ${paraTexto(s.u)}, d${s.variavel} = ${textoDoIntegrando(s.du)} d${p.variavel}`;
+    const du = vale(s.du, 1) ? `d${p.variavel}` : `${textoDoIntegrando(s.du)} d${p.variavel}`; // du = dx, e não du = 1 dx
+    const troca = `${s.variavel} = ${paraTexto(s.u)}, d${s.variavel} = ${du}`;
     const volta = s.volta ? ` = ${paraTexto(s.volta.emU)} + C = ${paraTexto(s.volta.emX)} + C` : '';
     return `${NOMES.substituição}: ${troca}. ${integralDoPasso} = ${paraTexto(p.expansao)}${volta}`;
   }
@@ -284,6 +289,9 @@ function outrasTecnicas(e: Expr, v: string): Aplicacao {
     const { emU, ...substituicao } = s;
     return { regra: 'substituição', expansao: integral(emU, s.variavel), substituicao };
   }
+  // a reescrita vem antes de separar a constante: 3x(x + 1) sai x³ + 3x²/2, e não 3·(x³/3 + x²/2)
+  const reescrita = reescrever(e, v);
+  if (reescrita) return { regra: 'reescrita', expansao: integral(reescrita, v) };
   const { k, resto } = separarConstante(e, v);
   if (!vale(k, 1)) return { regra: 'múltiplo constante', expansao: mul(k, integral(resto, v)) };
   const simplificada = simplificar(e);
@@ -302,12 +310,69 @@ function tentarSubstituicao(e: Expr, v: string): (Substituicao & { emU: Expr }) 
   for (const g of candidatos(e, v)) {
     const dg = derivadaDe(g, v);
     if (!dg || vale(dg, 0)) continue;
-    const emU = simplificar(div(trocar(e, g, variavel(u)), dg));
-    if (contem(emU, v)) continue; // g'(x) não está no integrando
+    const trocada = trocar(e, g, variavel(u));
+    let emU = simplificar(div(trocada, dg));
+    if (contem(emU, v)) {
+      // g'(x) está no integrando, mas multiplicada por uma constante que a simplificação não viu
+      const comConstante = substituicaoComConstante(trocada, dg, v, u);
+      if (!comConstante || contem(comConstante, v) || !confereSubstituicao(e, comConstante, g, dg, v, u)) continue;
+      emU = comConstante;
+    }
     if (iguais(trocar(emU, variavel(u), variavel(v)), e)) continue; // não avançou, como 1/(2x) com u = 2x
     return { variavel: u, u: g, du: dg, emU };
   }
   return null;
+}
+
+/** Pontos para comparar duas funções de x, longe de valores notáveis. */
+const AMOSTRAS = [0.37, 1.23, 2.71, -0.83, -1.9, 3.3, 0.61];
+
+/**
+ * Quando a simplificação não cancela g′(x) sozinha, como em (6x + 3)(x² + x)⁴ com u = x² + x:
+ * separa os fatores que dependem só de x dos que dependem só de u e confere se a parte em x é
+ * um múltiplo constante de g′(x). Aqui, (6x + 3)/(2x + 1) = 3, e sobra ∫ 3u⁴ du.
+ */
+function substituicaoComConstante(trocada: Expr, dg: Expr, v: string, u: string): Expr | null {
+  const fatoresX = { cima: [] as Expr[], baixo: [] as Expr[] };
+  const fatoresU = { cima: [] as Expr[], baixo: [] as Expr[] };
+  const separar = (f: Expr, emCima: boolean): boolean => {
+    if (f.tipo === 'mul') return separar(f.a, emCima) && separar(f.b, emCima);
+    if (f.tipo === 'div') return separar(f.a, emCima) && separar(f.b, !emCima);
+    if (f.tipo === 'neg') {
+      fatoresX.cima.push(num(-1));
+      return separar(f.a, emCima);
+    }
+    if (contem(f, v) && contem(f, u)) return false;
+    (contem(f, u) ? fatoresU : fatoresX)[emCima ? 'cima' : 'baixo'].push(f);
+    return true;
+  };
+  if (!separar(trocada, true)) return null;
+  const produto = (l: Expr[]): Expr => (l.length === 0 ? num(1) : l.reduce((p, q) => mul(p, q)));
+  const parteX = div(produto(fatoresX.cima), produto(fatoresX.baixo));
+  const razoes: number[] = [];
+  for (const t of AMOSTRAS) {
+    const [a, b] = [avaliar(parteX, { [v]: t }), avaliar(dg, { [v]: t })];
+    if (Number.isFinite(a) && Number.isFinite(b) && Math.abs(b) > 1e-9) razoes.push(a / b);
+  }
+  const k = razoes[0];
+  if (razoes.length < 3 || k === undefined || !razoes.every((r) => Math.abs(r - k) <= 1e-9 * Math.max(1, Math.abs(k)))) return null;
+  const c = racional(num(k));
+  if (!c || c[0] === 0) return null;
+  const constante = c[1] === 1 ? num(c[0]) : div(num(c[0]), num(c[1]));
+  return simplificar(mul(constante, div(produto(fatoresU.cima), produto(fatoresU.baixo))));
+}
+
+/** f(g(x))·g′(x) volta ao integrando, conferido em pontos da amostra. */
+function confereSubstituicao(e: Expr, emU: Expr, g: Expr, dg: Expr, v: string, u: string): boolean {
+  let comparados = 0;
+  for (const t of AMOSTRAS) {
+    const esperado = avaliar(e, { [v]: t });
+    const obtido = avaliar(emU, { [u]: avaliar(g, { [v]: t }) }) * avaliar(dg, { [v]: t });
+    if (!Number.isFinite(esperado) || !Number.isFinite(obtido)) continue;
+    if (Math.abs(esperado - obtido) > 1e-9 * Math.max(1, Math.abs(esperado))) return false;
+    comparados++;
+  }
+  return comparados >= 3;
 }
 
 function derivadaDe(g: Expr, v: string): Expr | null {
@@ -404,6 +469,211 @@ function separarConstante(e: Expr, v: string): { k: Expr; resto: Expr } {
   };
 }
 
+// ─── Reescrever antes de integrar ──────────────────────────────────────────────
+//
+// Antes de desistir, o integrando vira uma soma de potências de x: a distributiva em x(x + 1),
+// as propriedades das potências em x²√x = x^(5/2) e a fração com um termo só embaixo,
+// (x² + 1)/x = x + 1/x. Fração de polinômios com mais de um termo embaixo passa pela divisão,
+// P = Q·S + R, quando o resto R/Q sai pelas regras do projeto. Coeficientes e expoentes ficam
+// como frações exatas, para a reescrita não arredondar nada.
+
+/** p/q, com q > 0 e sem fator comum. */
+type Fracao = [number, number];
+
+const exata = ([p, q]: Fracao): boolean => Number.isSafeInteger(p) && Number.isSafeInteger(q) && Math.abs(p) < 1e9 && q < 1e9;
+const somaF = ([a, b]: Fracao, [c, d]: Fracao): Fracao => fracao(a * d + c * b, b * d);
+const vezesF = ([a, b]: Fracao, [c, d]: Fracao): Fracao => fracao(a * c, b * d);
+const valorF = ([p, q]: Fracao): number => p / q;
+
+/** Soma de termos c·xⁿ, com n e c racionais; a chave é o expoente. */
+type Potencias = Map<string, { n: Fracao; c: Fracao }>;
+
+const MAX_TERMOS = 40;
+
+function umTermo(n: Fracao, c: Fracao): Potencias {
+  const p: Potencias = new Map();
+  if (c[0] !== 0) p.set(`${n[0]}/${n[1]}`, { n, c });
+  return p;
+}
+
+function juntar(p: Potencias, q: Potencias, sinal: 1 | -1): Potencias | null {
+  const r: Potencias = new Map(p);
+  for (const [k, { n, c }] of q) {
+    const novo = somaF(r.get(k)?.c ?? [0, 1], [sinal * c[0], c[1]]);
+    if (!exata(novo)) return null;
+    if (novo[0] === 0) r.delete(k);
+    else r.set(k, { n, c: novo });
+  }
+  return r;
+}
+
+function multiplicarP(p: Potencias, q: Potencias): Potencias | null {
+  let r: Potencias | null = new Map();
+  for (const a of p.values()) {
+    for (const b of q.values()) {
+      const [n, c] = [somaF(a.n, b.n), vezesF(a.c, b.c)];
+      if (!exata(n) || !exata(c)) return null;
+      r = juntar(r, umTermo(n, c), 1);
+      if (!r || r.size > MAX_TERMOS) return null;
+    }
+  }
+  return r;
+}
+
+/** Constante como fração exata (2, −1/3, 0.5); null para π, e, √2. */
+function constanteExata(e: Expr): Fracao | null {
+  const v = avaliar(e);
+  if (!Number.isFinite(v)) return null;
+  const r = racional(num(v));
+  return r && Math.abs(valorF(r) - v) <= 1e-12 * Math.max(1, Math.abs(v)) ? r : null;
+}
+
+/** A expressão como soma de potências de v com coeficientes racionais, ou null. */
+function comoPotencias(e: Expr, v: string): Potencias | null {
+  if (!contem(e, v)) {
+    const k = constanteExata(e);
+    return k ? umTermo([0, 1], k) : null;
+  }
+  switch (e.tipo) {
+    case 'var':
+      return e.nome === v ? umTermo([1, 1], [1, 1]) : null;
+    case 'soma':
+    case 'sub': {
+      const [a, b] = [comoPotencias(e.a, v), comoPotencias(e.b, v)];
+      return a && b ? juntar(a, b, e.tipo === 'soma' ? 1 : -1) : null;
+    }
+    case 'neg': {
+      const a = comoPotencias(e.a, v);
+      return a ? juntar(new Map(), a, -1) : null;
+    }
+    case 'mul': {
+      const [a, b] = [comoPotencias(e.a, v), comoPotencias(e.b, v)];
+      return a && b ? multiplicarP(a, b) : null;
+    }
+    case 'div': {
+      // só com um termo embaixo: (x² + 1)/x = x + 1/x; com mais, é a divisão de polinômios
+      const [a, b] = [comoPotencias(e.a, v), comoPotencias(e.b, v)];
+      const unico = b && b.size === 1 ? [...b.values()][0] : undefined;
+      if (!a || !unico) return null;
+      return multiplicarP(a, umTermo([-unico.n[0], unico.n[1]], fracao(unico.c[1], unico.c[0])));
+    }
+    case 'pot': {
+      const r = contem(e.exp, v) ? null : constanteExata(e.exp);
+      return r ? potenciaDe(e.base, r, v) : null;
+    }
+    case 'func':
+      return e.nome === 'raiz' ? potenciaDe(e.arg, [1, 2], v) : null;
+    default:
+      return null;
+  }
+}
+
+/**
+ * (base)ʳ como soma de potências. Expoente fracionário só sobre a própria variável (xʳ):
+ * (x²)^(1/2) é |x|, e não x. Expoente natural multiplica; inteiro negativo, só com um termo.
+ */
+function potenciaDe(base: Expr, [p, q]: Fracao, v: string): Potencias | null {
+  if (base.tipo === 'var' && base.nome === v) return umTermo([p, q], [1, 1]);
+  if (q !== 1) return null;
+  const b = comoPotencias(base, v);
+  if (!b) return null;
+  if (p >= 0 && p <= 12) {
+    let r: Potencias | null = umTermo([0, 1], [1, 1]);
+    for (let i = 0; i < p && r; i++) r = multiplicarP(r, b);
+    return r;
+  }
+  const unico = p < 0 && b.size === 1 ? [...b.values()][0] : undefined;
+  if (unico) {
+    let inverso: Fracao = [1, 1];
+    for (let i = 0; i < -p; i++) inverso = vezesF(inverso, fracao(unico.c[1], unico.c[0]));
+    const expoente = vezesF(unico.n, [p, 1]);
+    return exata(inverso) && exata(expoente) ? umTermo(expoente, inverso) : null;
+  }
+  return null;
+}
+
+/** A soma de potências como expressão, do maior expoente para o menor: x^2/2 - x + 1/x. */
+function paraExpressao(p: Potencias, v: string): Expr {
+  const x = variavel(v);
+  const termos = [...p.values()].sort((a, b) => valorF(b.n) - valorF(a.n));
+  if (termos.length === 0) return num(0);
+  const exprs = termos.map(({ n: [pn, qn], c: [pc, qc] }) => {
+    const m = Math.abs(pn);
+    const potencia: Expr | null = m === 0 ? null : qn === 1 ? (m === 1 ? x : pot(x, num(m))) : m === 1 && qn === 2 ? func('raiz', x) : pot(x, div(num(m), num(qn)));
+    const cima = pn > 0 && potencia ? (Math.abs(pc) === 1 ? potencia : mul(num(Math.abs(pc)), potencia)) : num(Math.abs(pc));
+    const embaixo = pn < 0 && potencia ? (qc === 1 ? potencia : mul(num(qc), potencia)) : qc === 1 ? null : num(qc);
+    const termo = embaixo ? div(cima, embaixo) : cima;
+    return pc < 0 ? neg(termo) : termo;
+  });
+  return exprs.reduce((acc, t) => (t.tipo === 'neg' ? sub(acc, t.a) : soma(acc, t)));
+}
+
+/** Os coeficientes (grau 0, 1, 2…) quando todos os expoentes são naturais. */
+function coeficientes(p: Potencias): Fracao[] | null {
+  let grau = 0;
+  for (const { n } of p.values()) {
+    if (n[1] !== 1 || n[0] < 0) return null;
+    grau = Math.max(grau, n[0]);
+  }
+  const c: Fracao[] = Array.from({ length: grau + 1 }, (): Fracao => [0, 1]);
+  for (const { n, c: k } of p.values()) c[n[0]] = k;
+  return c;
+}
+
+const dosCoeficientes = (c: Fracao[]): Potencias => {
+  const p: Potencias = new Map();
+  c.forEach((k, i) => {
+    if (k[0] !== 0) p.set(`${i}/1`, { n: [i, 1], c: k });
+  });
+  return p;
+};
+
+/** P = Q·S + R, com grau(R) < grau(Q), em frações exatas; null se o grau de P for menor. */
+function dividirPolinomios(P: Fracao[], Q: Fracao[]): { S: Fracao[]; R: Fracao[] } | null {
+  const dq = Q.length - 1;
+  const lider = Q[dq]!;
+  if (P.length - 1 < dq || lider[0] === 0) return null;
+  const R = P.map((c): Fracao => [c[0], c[1]]);
+  const S: Fracao[] = Array.from({ length: P.length - dq }, (): Fracao => [0, 1]);
+  for (let k = P.length - 1; k >= dq; k--) {
+    const coef = vezesF(R[k]!, fracao(lider[1], lider[0]));
+    if (!exata(coef)) return null;
+    S[k - dq] = coef;
+    for (let j = 0; j <= dq; j++) {
+      const novo = somaF(R[k - dq + j]!, vezesF([-coef[0], coef[1]], Q[j]!));
+      if (!exata(novo)) return null;
+      R[k - dq + j] = novo;
+    }
+  }
+  return { S, R: R.slice(0, dq) };
+}
+
+/** O integrando reescrito (distributiva, potências ou divisão de polinômios), ou null se não mudar. */
+function reescrever(e: Expr, v: string): Expr | null {
+  const p = comoPotencias(e, v);
+  if (p) {
+    const nova = simplificar(paraExpressao(p, v));
+    return iguais(nova, e) || iguais(nova, simplificar(e)) ? null : nova;
+  }
+  if (e.tipo !== 'div') return null;
+  const [cima, baixo] = [comoPotencias(e.a, v), comoPotencias(e.b, v)];
+  const P = cima && coeficientes(cima);
+  const Q = baixo && baixo.size > 1 ? coeficientes(baixo) : null;
+  if (!P || !Q) return null;
+  const d = dividirPolinomios(P, Q);
+  if (!d) return null;
+  const quociente = simplificar(paraExpressao(dosCoeficientes(d.S), v));
+  if (d.R.every((c) => c[0] === 0)) return quociente;
+  // o resto R/Q precisa sair pelas regras do projeto; senão a integral pede frações parciais
+  const resto = div(simplificar(paraExpressao(dosCoeficientes(d.R), v)), e.b);
+  try {
+    integrar(resto, v);
+  } catch {
+    return null;
+  }
+  return soma(quociente, resto);
+}
+
 // ─── Avisos para o que fica fora do projeto ────────────────────────────────────
 
 const TRIGONOMETRICAS: ReadonlySet<NomeFuncao> = new Set<NomeFuncao>(['sen', 'cos', 'tg', 'cotg', 'sec', 'csc']);
@@ -416,6 +686,15 @@ function semRegra(e: Expr, v: string): string {
   if (temModulo(e)) return `${texto}: o módulo só entra na integral definida, cortando o intervalo onde a função troca de sinal.`;
   if ((e.tipo === 'func' && e.nome === 'ln') || e.tipo === 'log') return foraDoProjeto('integração por partes', 'quadro 6');
   if (e.tipo === 'div' && polinomio(e.a, v) && polinomio(e.b, v)) {
+    // denominador de grau 2 sem raiz real: o que sobra é a arco-tangente, e não frações parciais
+    const baixo = comoPotencias(e.b, v);
+    const q = baixo && coeficientes(baixo);
+    if (q && q.length === 3) {
+      const [c, b, a] = q.map(valorF) as [number, number, number];
+      if (b * b - 4 * a * c < 0) {
+        return `Não há regra do projeto para ${texto}: o denominador ${paraTexto(e.b)} não tem raiz real, e a integral pede a arco-tangente (∫ 1/(1 + x²) dx = arctg x + C), que fica fora das regras do projeto.`;
+      }
+    }
     return foraDoProjeto('frações parciais, por ser uma fração de polinômios', 'quadro 7');
   }
   if (e.tipo === 'pot' && e.base.tipo === 'func' && TRIGONOMETRICAS.has(e.base.nome)) {
@@ -454,6 +733,8 @@ function polinomio(e: Expr, v: string): boolean {
 function transcendente(e: Expr, v: string): boolean {
   switch (e.tipo) {
     case 'func':
+      // raiz e módulo são algébricas: x²√x sai pela potência, e não por partes
+      return e.nome === 'raiz' || e.nome === 'abs' ? transcendente(e.arg, v) : true;
     case 'log':
       return true;
     case 'pot':

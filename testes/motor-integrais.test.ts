@@ -9,6 +9,7 @@ import { descreverIntegralDefinida, integralDefinida } from '../src/motor/defini
 import { ErroDeEntrada, paraTexto } from '../src/motor/expressao';
 import { descreverPasso, integrar } from '../src/motor/integrais';
 import { REGRAS_INTEGRACAO, integrais, integraisDefinidas, integraisForaDoEscopo } from './casos-dos-slides';
+import type { Intervalo } from './casos-dos-slides';
 import { equivalentes, validaIntegral } from './oraculo';
 
 /** Número legível no nome do teste: 2, 3.1416. */
@@ -95,6 +96,82 @@ describe('Passo a passo', () => {
   });
 });
 
+/** A primitiva do motor passa no oráculo, e a forma esperada também (as duas diferem por uma constante). */
+function confereIntegral(f: string, esperado: string, dominio?: Intervalo): ReturnType<typeof integrar> {
+  const r = integrar(f);
+  const caso = (primitiva: string) => ({ id: f, fonte: 'teste', f, esperado: primitiva, regras: [], ...(dominio ? { dominio } : {}) });
+  expect(validaIntegral(caso(paraTexto(r.resultado))), `motor: ${paraTexto(r.resultado)}`).toBe(true);
+  expect(validaIntegral(caso(esperado)), `esperado: ${esperado}`).toBe(true);
+  return r;
+}
+
+describe('Reescrever antes de integrar: distributiva, potências e divisão de polinômios', () => {
+  const casos: [string, string, Intervalo?][] = [
+    ['x*(x + 1)', 'x^3/3 + x^2/2'],
+    ['(x + 1)*(x - 1)', 'x^3/3 - x'],
+    ['x^2*(x + 3)', 'x^4/4 + x^3'],
+    ['(2*x + 1)*(x - 3)', '2*x^3/3 - 5*x^2/2 - 3*x'],
+    ['3*x*(x + 1)', 'x^3 + 3*x^2/2'],
+    ['x*(x + 1)^3', 'x^5/5 + 3*x^4/4 + x^3 + x^2/2'],
+    ['x^2*sqrt(x)', '2*x^(7/2)/7', [0.1, 5]],
+    ['sqrt(x)*(x + 1)', '2*x^(5/2)/5 + 2*x^(3/2)/3', [0.1, 5]],
+    ['x/sqrt(x)', '2*x^(3/2)/3', [0.1, 5]],
+    ['(x^2 + 1)/x', 'x^2/2 + ln(abs(x))'],
+    ['(x^3 + 2*x)/x^2', 'x^2/2 + 2*ln(abs(x))'],
+    ['(x + 1)/(2*x)', 'x/2 + ln(abs(x))/2'],
+    ['(x^2 - 4)/(x - 2)', 'x^2/2 + 2*x'],
+    ['(x^3 - 1)/(x - 1)', 'x^3/3 + x^2/2 + x'],
+    ['(x^2 + 1)/(x + 1)', 'x^2/2 - x + 2*ln(abs(x + 1))'],
+    ['x^3/(x^2 - 1)', 'x^2/2 + ln(abs(x^2 - 1))/2'],
+  ];
+  for (const [f, esperado, dominio] of casos) {
+    it(`∫ ${f} dx = ${esperado} + C`, () => {
+      expect(confereIntegral(f, esperado, dominio).regrasUsadas).toContain('reescrita');
+    });
+  }
+
+  it('o passo mostra a reescrita antes da regra da potência', () => {
+    const r = integrar('(x + 1)*(x - 1)');
+    expect(r.passos[0]!.regra).toBe('reescrita');
+    expect(descreverPasso(r.passos[0]!)).toBe('Reescrever antes de integrar: ∫ (x + 1)*(x - 1) dx = ∫ (x^2 - 1) dx');
+  });
+
+  it('a substituição continua tendo a vez quando serve: ∫ (x + 1)^5 dx = (x + 1)^6/6', () => {
+    expect(paraTexto(integrar('(x + 1)^5').resultado)).toBe('(x + 1)^6/6');
+  });
+
+  it('(x²)^0.5 é |x|, e não x: a integral não vira x²/2', () => {
+    expect(() => integrar('(x^2)^0.5')).toThrow(ErroDeEntrada);
+    expect(() => integrar('sqrt(x^2)')).toThrow(ErroDeEntrada);
+  });
+});
+
+describe('Substituição com uma constante escondida em g′(x)', () => {
+  const casos: [string, string, Intervalo?][] = [
+    ['(x + 1)/(x^2 + 2*x)', 'ln(abs(x^2 + 2*x))/2'],
+    ['(x + 1)/(x^2 + 2*x + 3)', 'ln(abs(x^2 + 2*x + 3))/2'],
+    ['(4*x + 2)*cos(x^2 + x)', '2*sen(x^2 + x)'],
+    ['(6*x + 3)*(x^2 + x)^4', '3*(x^2 + x)^5/5'],
+    ['(x + 1)*e^(x^2 + 2*x)', 'e^(x^2 + 2*x)/2'],
+    ['(x + 1)*(x^2 + 2*x)^3', '(x^2 + 2*x)^4/8'],
+    ['(9*x^2 + 6)*sqrt(x^3 + 2*x)', '2*(x^3 + 2*x)^(3/2)', [0.1, 3]],
+    ['(2*x + 2)*sen(x^2 + 2*x)', '-cos(x^2 + 2*x)'],
+  ];
+  for (const [f, esperado, dominio] of casos) {
+    it(`∫ ${f} dx = ${esperado} + C`, () => {
+      expect(confereIntegral(f, esperado, dominio).regrasUsadas).toContain('substituição');
+    });
+  }
+
+  it('o passo mostra u, du e a constante que sobrou', () => {
+    const r = integrar('(4*x + 2)*cos(x^2 + x)');
+    const s = r.passos.find((p) => p.substituicao)!;
+    expect(paraTexto(s.substituicao!.u)).toBe('x^2 + x');
+    expect(paraTexto(s.substituicao!.du)).toBe('2*x + 1');
+    expect(paraTexto(s.expansao)).toBe('∫ 2*cos(u) du');
+  });
+});
+
 describe('Técnicas fora do projeto: o motor avisa em vez de errar', () => {
   for (const c of integraisForaDoEscopo) {
     it(`${c.id}: ∫ ${c.f} dx (${c.fonte})`, () => expect(() => integrar(c.f)).toThrow(ErroDeEntrada));
@@ -102,6 +179,8 @@ describe('Técnicas fora do projeto: o motor avisa em vez de errar', () => {
 
   const avisos: [string, RegExp][] = [
     ['x*e^x', /por partes/],
+    ['1/(x^2 + 1)', /arco-tangente/],
+    ['(x + 2)/(x^2 + 4)', /arco-tangente/],
     ['(2*x + 3)/(x^2 - 1)', /frações parciais/],
     ['ln(x)', /por partes/],
     ['sen(x)^2', /identidades trigonométricas/],

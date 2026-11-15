@@ -860,7 +860,12 @@ const integrais: Aula = {
           (r) =>
             `<tr><th scope="row">${r.nome}</th><td data-rotulo="Fórmula">${m(r.forma)}</td><td data-rotulo="Exemplo">${integralDe(r.f, r.F)}</td><td>${calcular({ modo: 'integral', f: r.f, resposta: r.F })}</td></tr>`,
         ).join('')}</tbody>
-      </table>`,
+      </table>
+      <p>Quando o integrando chega como produto ou fração, a calculadora reescreve antes de integrar: aplica a distributiva, junta as potências e divide os polinômios, como em ${m('#int x^2 #r{x} #dx = #int x^{5/2} #dx')}. Na substituição, uma constante que acompanha ${m("g'(x)")} vai para fora: em ${m('#int (4x + 2) cos(x^2 + x) #dx')}, com ${m('u = x^2 + x')}, ${m('4x + 2 = 2(2x + 1)')}.</p>
+      <div class="botoes">${calcular({ modo: 'integral', f: '(x + 1)*(x - 1)', resposta: 'x^3/3 - x' }, 'Calcular ∫ (x + 1)(x − 1) dx')}${calcular(
+        { modo: 'integral', f: '(4*x + 2)*cos(x^2 + x)', resposta: '2*sen(x^2 + x)' },
+        'Calcular ∫ (4x + 2) cos(x² + x) dx',
+      )}</div>`,
     },
     {
       titulo: 'Substituição em quatro passos',
