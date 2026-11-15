@@ -2453,6 +2453,62 @@ h2 {
   }
 }
 
+/* ─── Formas prontas do modo Função ─────────────────────────────────────── */
+
+.formas {
+  margin-top: 4px;
+}
+
+.ficha-forma {
+  padding: 4px 12px;
+  font-size: 0.98rem;
+}
+
+.ficha-forma[aria-pressed='true'] {
+  border-color: transparent;
+  background: linear-gradient(135deg, #6d4aff, #2563eb);
+  box-shadow: 0 6px 18px rgba(109, 74, 255, 0.4);
+  color: #fff;
+}
+
+.formas-caixas {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  margin: 12px 0 4px;
+  padding: 10px 14px;
+  border: 1px solid rgba(139, 108, 255, 0.45);
+  border-radius: 14px;
+  background: rgba(139, 108, 255, 0.1);
+  font-size: 1.3rem;
+}
+
+.formas-caixas input,
+.formas-caixas select {
+  width: 4.2ch;
+  margin: 0 3px;
+  padding: 2px 6px;
+  border: 1px solid rgba(250, 204, 21, 0.55);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.7);
+  color: #fde68a;
+  font: 600 1rem var(--fonte-mono);
+  text-align: center;
+}
+
+.formas-caixas select {
+  width: auto;
+  font-family: var(--fonte-mat);
+  font-size: 1.05rem;
+}
+
+.formas-caixas input:focus-visible,
+.formas-caixas select:focus-visible {
+  outline: 2px solid #facc15;
+  outline-offset: 1px;
+}
+
 /* ─── O carro do exemplo, acima do gráfico da calculadora ──────────────────── */
 
 .cena-carro {

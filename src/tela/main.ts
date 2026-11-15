@@ -20,6 +20,7 @@ import { iniciarConteudo } from './aulas';
 import type { Conta } from './conteudos';
 import { CenaCarro } from './cena-do-carro';
 import type { CenaDoCarro, Marco } from './cena-do-carro';
+import { Formas } from './formas';
 import { escapar, formulaHTML, integralHTML, temPendencia } from './formula';
 import { Grafico, curto, somaDeRiemann } from './grafico';
 import type { Cena, Funcao, PontoDoGrafico } from './grafico';
@@ -368,6 +369,17 @@ let ultimosPassos: ItemPasso[] = [];
 let aoTerminarDefinida: (() => void) | null = null;
 
 const cenaDoCarro = new CenaCarro(elemento<HTMLDivElement>('cena-carro'), elemento<HTMLCanvasElement>('canvas-carro'));
+
+/** Modo Função: a forma geral com caixas para os números. */
+const formas = new Formas(elemento<HTMLDivElement>('formas'), (texto) => {
+  digitacao++;
+  veioDeExemplo = false;
+  exemploAtual = null;
+  campo.value = texto;
+  campo.classList.remove('digitando');
+  atualizarPrevia();
+  calcular();
+});
 
 const grafico = new Grafico(canvas, {
   aoLer: (texto) => {
@@ -1106,6 +1118,7 @@ const esperar = (ms: number): Promise<void> => new Promise((resolver) => setTime
 /** O exemplo se digita sozinho no campo, letra por letra, e a conta sai em seguida. */
 async function usarExemplo(exemplo: Exemplo): Promise<void> {
   const minha = ++digitacao;
+  formas.fechar();
   veioDeExemplo = true;
   exemploAtual = exemplo;
   if (exemplo.a !== undefined) campoA.value = exemplo.a;
@@ -1180,6 +1193,8 @@ function trocarModo(novo: Modo, exemplo?: Exemplo): void {
   limites.hidden = novo !== 'definida';
   pontoDoLimite.hidden = novo !== 'limite';
   campo.placeholder = SUGESTAO[novo];
+  elemento<HTMLDivElement>('formas').hidden = novo !== 'funcao';
+  formas.fechar();
   apontarAula(novo);
   montarExemplos();
   // Conta que veio de um exemplo dá lugar ao primeiro exemplo do novo modo; a que o aluno digitou é refeita no novo modo.
@@ -1218,6 +1233,7 @@ formulario.addEventListener('submit', (ev) => {
 let timerPrevia: number | undefined;
 campo.addEventListener('input', () => {
   digitacao++;
+  formas.fechar();
   veioDeExemplo = false;
   exemploAtual = null;
   campo.classList.remove('digitando');
