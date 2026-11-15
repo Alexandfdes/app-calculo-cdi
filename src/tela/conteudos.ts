@@ -357,7 +357,7 @@ const funcoes: Aula = {
       </div>`,
     },
     {
-      titulo: 'Os oito tipos da Aula 1',
+      titulo: 'Os oito tipos de função',
       cor: '#a78bfa',
       largo: true,
       html: `<p>Cada tipo tem sua lei, seu domínio e sua imagem. O botão abre um exemplo na calculadora, com o gráfico e a ficha completa.</p>
@@ -895,7 +895,7 @@ const integrais: Aula = {
       </div>`,
     },
     {
-      titulo: 'Outras técnicas da Aula 4',
+      titulo: 'Outras técnicas de integração',
       cor: '#fb923c',
       html: `<p>Algumas integrais pedem técnicas que estão nos slides, mas fora das seis regras do projeto. A calculadora reconhece esses casos e diz qual técnica seria usada.</p>
       <ul>
@@ -962,7 +962,7 @@ export function historiaDoCarro(atual: IdAula): string {
     <p class="historia-intro">Um carro vem a 20 m/s (72 km/h). No instante ${m('t = 0')}, o motorista vê uma lombada 62 m à frente, que pede no máximo 30 km/h. Ele leva 1 s para reagir e então freia, perdendo 4 m/s a cada segundo, até chegar à lombada. O mesmo problema atravessa as quatro aulas. Na calculadora, o tempo ${m('t')} é digitado como ${m('x')}.</p>
     <ol class="historia-passos">${HISTORIA.map(
       (p) => `<li${p.aula === atual ? ' class="atual" aria-current="step"' : ''}>
-        <a class="historia-aula" href="#${p.aula}">Aula ${p.numero} · ${p.titulo}</a>
+        <a class="historia-aula" href="#${p.aula}">${p.titulo}</a>
         <p>${p.texto}</p>
         ${p.botao}
       </li>`,
@@ -985,7 +985,7 @@ export function htmlDaAula(aula: Aula): string {
     </section>`,
   );
   return `<header class="aula-topo">
-      <p class="aula-numero">Aula ${aula.numero}</p>
+      
       <h2 class="aula-titulo" tabindex="-1">${aula.titulo}</h2>
       <p class="aula-chamada">${aula.chamada}</p>
       <p class="aula-ideia">${aula.ideia}</p>
@@ -993,8 +993,8 @@ export function htmlDaAula(aula: Aula): string {
     <div class="cartoes">${cartoes.join('')}</div>
     ${historiaDoCarro(aula.id)}
     <nav class="aula-navegacao" aria-label="Outras aulas">
-      ${anterior ? `<a href="#${anterior.id}">← Aula ${anterior.numero} · ${anterior.titulo}</a>` : '<span></span>'}
-      ${proxima ? `<a href="#${proxima.id}">Aula ${proxima.numero} · ${proxima.titulo} →</a>` : '<a href="#calculadora">Ir para a calculadora →</a>'}
+      ${anterior ? `<a href="#${anterior.id}">← ${anterior.titulo}</a>` : '<span></span>'}
+      ${proxima ? `<a href="#${proxima.id}">${proxima.titulo} →</a>` : '<a href="#calculadora">Ir para a calculadora →</a>'}
     </nav>`;
 }
 

@@ -297,11 +297,11 @@ const ETIQUETAS: Record<Etiqueta, { nome: string; cor: string }> = {
 
 /** A aula que explica cada modo, para o link "Entenda…" da calculadora. */
 const AULA_DO_MODO: Record<Modo, { id: string; texto: string }> = {
-  funcao: { id: 'funcoes', texto: 'Entenda as funções (Aula 1)' },
-  limite: { id: 'limites', texto: 'Entenda os limites (Aula 2)' },
-  derivada: { id: 'derivadas', texto: 'Entenda as derivadas (Aula 3)' },
-  integral: { id: 'integrais', texto: 'Entenda as integrais (Aula 4)' },
-  definida: { id: 'integrais', texto: 'Entenda as integrais (Aula 4)' },
+  funcao: { id: 'funcoes', texto: 'Entenda as funções' },
+  limite: { id: 'limites', texto: 'Entenda os limites' },
+  derivada: { id: 'derivadas', texto: 'Entenda as derivadas' },
+  integral: { id: 'integrais', texto: 'Entenda as integrais' },
+  definida: { id: 'integrais', texto: 'Entenda as integrais' },
 };
 
 /** O que o campo sugere em cada modo. */
@@ -502,7 +502,7 @@ function conferirIntegral(f: Expr, F: Expr): string {
   }
   if (total < 3) return '';
   return certos === total
-    ? '✓ Verifique derivando (Aula 4, quadro 12): o motor de derivadas deriva F(x) e volta a f(x).'
+    ? '✓ Verifique derivando: o motor de derivadas deriva F(x) e volta a f(x).'
     : 'Atenção: derivando F(x) não voltou a f(x) em todos os pontos.';
 }
 

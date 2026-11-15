@@ -59,7 +59,7 @@ export function iniciarConteudo(aoCalcular: (conta: Conta) => void): { irPara: (
         else a.removeAttribute('aria-current');
       });
       abrir(escolhida.id);
-      document.title = `Aula ${escolhida.numero}: ${escolhida.titulo} · Cálculo CDI`;
+      document.title = `${escolhida.titulo} · Cálculo CDI`;
     } else {
       vistaConteudo.removeAttribute('aria-current');
       vistaCalculadora.setAttribute('aria-current', 'page');
