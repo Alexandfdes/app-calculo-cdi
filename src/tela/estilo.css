@@ -196,7 +196,8 @@ body::before {
   margin: 0 auto;
   padding: 0 16px 36px;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: 'entrada' 'resultado' 'grafico' 'passos';
+  /* no celular, o gráfico vem logo depois da entrada: a pessoa digita e já vê a curva */
+  grid-template-areas: 'entrada' 'grafico' 'resultado' 'passos';
 }
 
 .entrada {
