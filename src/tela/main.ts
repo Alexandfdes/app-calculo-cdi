@@ -1007,6 +1007,7 @@ function mostrarLimite(texto: string): void {
 }
 
 function mostrarErro(mensagem: string, texto: string): void {
+  placar.hidden = true;
   reiniciarAnimacao(resultado, 'erro');
   resultado.innerHTML = `<p class="resultado-titulo">Não deu para calcular</p><p class="mensagem-erro">${escapar(mensagem)}</p>`;
   ultimosPassos = [];

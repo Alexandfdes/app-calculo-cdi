@@ -444,7 +444,7 @@ export function avaliar(e: Expr, valores: Record<string, number> = {}): number {
           : potenciaReal(avaliar(e.base, valores), avaliar(e.exp, valores)),
       );
     case 'neg':
-      return -avaliar(e.a, valores);
+      return real(-avaliar(e.a, valores));
     case 'func':
       return real(funcaoNumerica(e.nome, avaliar(e.arg, valores)));
     case 'log':
