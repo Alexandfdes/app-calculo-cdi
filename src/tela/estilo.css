@@ -17,7 +17,8 @@
   --erro: #fb7185;
   --cor-dominio: #34d399;
   --cor-imagem: #c084fc;
-  --raio: 20px;
+  --raio: 14px;
+  --destaque-solido: #3b5bdb;
   --sombra: 0 24px 60px rgba(2, 6, 23, 0.55);
   --fonte: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', sans-serif;
   --fonte-mat: 'Cambria Math', 'STIX Two Math', 'Latin Modern Math', Cambria, 'Times New Roman', serif;
@@ -53,9 +54,7 @@ body::before {
   inset: 0;
   z-index: -1;
   background:
-    radial-gradient(1100px 700px at 8% -10%, rgba(109, 74, 255, 0.28), transparent 60%),
-    radial-gradient(900px 600px at 105% 5%, rgba(34, 211, 238, 0.15), transparent 60%),
-    radial-gradient(900px 800px at 50% 115%, rgba(244, 114, 182, 0.13), transparent 60%);
+    radial-gradient(1100px 700px at 50% -20%, rgba(59, 83, 170, 0.18), transparent 65%);
   pointer-events: none;
   transform: translateZ(0);
 }
@@ -127,7 +126,6 @@ body::before {
   flex: none;
   width: 104px;
   height: 56px;
-  filter: drop-shadow(0 0 14px rgba(139, 108, 255, 0.55));
 }
 
 .logo-eixo {
@@ -138,7 +136,7 @@ body::before {
 
 .logo-curva {
   fill: none;
-  stroke: url(#logo-gradiente);
+  stroke: var(--cor-f);
   stroke-width: 4;
   stroke-linecap: round;
   stroke-dasharray: 200;
@@ -148,7 +146,6 @@ body::before {
 
 .logo-ponto {
   fill: #fff;
-  filter: drop-shadow(0 0 6px #22d3ee);
 }
 
 @keyframes tracar {
@@ -166,18 +163,7 @@ body::before {
 }
 
 .titulo span {
-  background: linear-gradient(90deg, #a78bfa, #22d3ee, #f472b6, #a78bfa);
-  background-size: 300% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: brilho 8s linear infinite;
-}
-
-@keyframes brilho {
-  to {
-    background-position: 300% 0;
-  }
+  color: var(--cor-f);
 }
 
 .subtitulo {
@@ -326,8 +312,8 @@ h2 {
   left: 4px;
   width: calc((100% - 8px) / 5);
   border-radius: 999px;
-  background: linear-gradient(135deg, #6d4aff, #2563eb);
-  box-shadow: 0 8px 26px rgba(109, 74, 255, 0.45);
+  background: var(--destaque-solido);
+  box-shadow: none;
   transition: transform 0.55s cubic-bezier(0.3, 1.4, 0.4, 1);
 }
 
@@ -399,7 +385,6 @@ h2 {
 }
 
 #funcao.digitando {
-  text-shadow: 0 0 12px rgba(34, 211, 238, 0.45);
 }
 
 .calcular {
@@ -411,21 +396,13 @@ h2 {
   font: 700 1rem var(--fonte);
   color: #fff;
   cursor: pointer;
-  background: linear-gradient(135deg, #6d4aff, #2563eb);
-  box-shadow: 0 10px 30px rgba(109, 74, 255, 0.45);
+  background: var(--destaque-solido);
+  box-shadow: none;
   transition:
     transform 0.2s,
     box-shadow 0.2s;
 }
 
-.calcular::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(120deg, transparent 30%, rgba(255, 255, 255, 0.35) 50%, transparent 70%);
-  transform: translateX(-120%);
-  animation: varrer 3.4s ease-in-out 1.5s infinite;
-}
 
 @keyframes varrer {
   0%,
@@ -439,7 +416,7 @@ h2 {
 
 .calcular:hover {
   transform: translateY(-2px);
-  box-shadow: 0 14px 36px rgba(109, 74, 255, 0.6);
+  box-shadow: 0 4px 14px rgba(2, 6, 23, 0.4);
 }
 
 .calcular:active {
@@ -576,7 +553,7 @@ h2 {
   transform: translateY(-2px);
   background: rgba(139, 108, 255, 0.18);
   border-color: rgba(139, 108, 255, 0.65);
-  box-shadow: 0 8px 22px rgba(139, 108, 255, 0.28);
+  box-shadow: none;
 }
 
 .chip:focus-visible {
@@ -635,7 +612,7 @@ h2 {
   inset: -1px;
   padding: 1.5px;
   border-radius: inherit;
-  background: conic-gradient(from var(--angulo), transparent 0 62%, #22d3ee 76%, #a78bfa 88%, #f472b6 96%, transparent 100%);
+  background: conic-gradient(from var(--angulo), transparent 0 62%, var(--cor-f) 80%, transparent 100%);
   -webkit-mask:
     linear-gradient(#000 0 0) content-box,
     linear-gradient(#000 0 0);
@@ -750,7 +727,7 @@ h2 {
   height: 6px;
   border-radius: 50%;
   background: var(--cor);
-  box-shadow: 0 0 8px var(--cor);
+  box-shadow: none;
 }
 
 .conferencia {
@@ -773,14 +750,12 @@ h2 {
 
 .valor {
   color: #fde68a;
-  text-shadow: 0 0 18px rgba(250, 204, 21, 0.45);
 }
 
 .diverge {
   color: var(--erro);
   font-family: var(--fonte);
   font-weight: 800;
-  text-shadow: 0 0 18px rgba(251, 113, 133, 0.5);
 }
 
 .faisca {
@@ -790,7 +765,6 @@ h2 {
   z-index: 5;
   color: var(--cor);
   font: 700 1.25rem var(--fonte-mat);
-  text-shadow: 0 0 12px var(--cor);
   pointer-events: none;
   animation: faisca 1.15s cubic-bezier(0.15, 0.7, 0.3, 1) forwards;
 }
@@ -1220,7 +1194,7 @@ h2 {
   height: 3px;
   border-radius: 3px;
   background: var(--cor);
-  box-shadow: 0 0 10px var(--cor);
+  box-shadow: none;
 }
 
 .tela-grafico {
@@ -1339,8 +1313,8 @@ h2 {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #a78bfa, #22d3ee);
-  box-shadow: 0 0 14px rgba(34, 211, 238, 0.35);
+  background: var(--destaque-solido);
+  box-shadow: none;
   color: #0b1020;
   font: 800 0.8rem var(--fonte);
 }
@@ -1416,8 +1390,8 @@ h2 {
 
 .vistas a[aria-current='page'] {
   color: #fff;
-  background: linear-gradient(135deg, #6d4aff, #2563eb);
-  box-shadow: 0 8px 26px rgba(109, 74, 255, 0.45);
+  background: var(--destaque-solido);
+  box-shadow: none;
 }
 
 .vistas a:focus-visible,
@@ -1673,7 +1647,7 @@ h2 {
 .conta:hover {
   transform: translateY(-1px);
   background: rgba(139, 108, 255, 0.28);
-  box-shadow: 0 8px 20px rgba(139, 108, 255, 0.3);
+  box-shadow: none;
 }
 
 .conta:focus-visible {
@@ -1992,7 +1966,7 @@ h2 {
   padding: 20px;
   border: 1px solid rgba(250, 204, 21, 0.3);
   border-radius: var(--raio);
-  background: linear-gradient(135deg, rgba(250, 204, 21, 0.08), rgba(244, 114, 182, 0.06)), var(--painel);
+  background: var(--painel);
   box-shadow: var(--sombra);
 }
 
@@ -2117,8 +2091,8 @@ h2 {
 
 .lab-chip[aria-pressed='true'] {
   border-color: transparent;
-  background: linear-gradient(135deg, #6d4aff, #2563eb);
-  box-shadow: 0 6px 18px rgba(109, 74, 255, 0.4);
+  background: var(--destaque-solido);
+  box-shadow: none;
   color: #fff;
 }
 
@@ -2289,8 +2263,8 @@ h2 {
   padding: 8px 16px;
   border: 0;
   border-radius: 999px;
-  background: linear-gradient(135deg, #f472b6, #8b6cff);
-  box-shadow: 0 8px 22px rgba(244, 114, 182, 0.3);
+  background: var(--destaque-solido);
+  box-shadow: none;
   color: #fff;
   font: 700 0.92rem var(--fonte);
   cursor: pointer;
@@ -2467,8 +2441,8 @@ h2 {
 
 .ficha-forma[aria-pressed='true'] {
   border-color: transparent;
-  background: linear-gradient(135deg, #6d4aff, #2563eb);
-  box-shadow: 0 6px 18px rgba(109, 74, 255, 0.4);
+  background: var(--destaque-solido);
+  box-shadow: none;
   color: #fff;
 }
 
