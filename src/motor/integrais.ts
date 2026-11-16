@@ -50,7 +50,8 @@ export type RegraIntegral =
   | 'simplificação'
   | 'por partes'
   | 'frações parciais'
-  | 'arco-tangente';
+  | 'arco-tangente'
+  | 'identidade trigonométrica';
 
 /** A troca de variável do quadro 5: u = g(x) e du = g'(x) dx. */
 export interface Substituicao {
@@ -138,6 +139,7 @@ const NOMES: Record<RegraIntegral, string> = {
   reescrita: 'Reescrever antes de integrar',
   simplificação: 'Simplificação',
   'por partes': 'Integração por partes',
+  'identidade trigonométrica': 'Identidade trigonométrica',
   'frações parciais': 'Frações parciais',
   'arco-tangente': 'Integral da arco-tangente',
 };
@@ -213,7 +215,10 @@ function aplicarRegra(e: Expr, v: string): Aplicacao {
       }
       if (ehX(exp)) return exponencial(base, x);
       const quadrado = quadradoDaTabela(base, exp, x);
-      return quadrado ? { regra: 'trigonométrica', expansao: quadrado } : outrasTecnicas(e, v);
+      if (quadrado) return { regra: 'trigonométrica', expansao: quadrado };
+      const identidade = quadradoPelaIdentidade(base, exp, v);
+      if (identidade) return identidade;
+      return outrasTecnicas(e, v);
     }
     case 'func':
       return (ehX(e.arg) ? funcaoDaTabela(e.nome, x) : null) ?? outrasTecnicas(e, v);
@@ -318,12 +323,67 @@ function outrasTecnicas(e: Expr, v: string): Aplicacao {
   if (!iguais(simplificada, e)) return { regra: 'simplificação', expansao: integral(simplificada, v) };
   const parciais = fracoesParciais(e, v);
   if (parciais) return parciais;
+  const ciclica = partesCiclica(e, v);
+  if (ciclica) return ciclica;
   const partes = porPartes(e, v);
   if (partes) return partes;
   throw new ErroDeEntrada(semRegra(e, v));
 }
 
+// ─── Identidades do arco duplo (quadro 9) ──────────────────────────────────────
+
+/**
+ * sen²u = (1 − cos 2u)/2, cos²u = (1 + cos 2u)/2, tg²u = sec²u − 1 e cotg²u = csc²u − 1:
+ * o quadrado vira algo que as outras regras integram.
+ */
+function quadradoPelaIdentidade(base: Expr, exp: Expr, v: string): Aplicacao | null {
+  if (!vale(exp, 2) || base.tipo !== 'func' || !contem(base.arg, v)) return null;
+  const u = base.arg;
+  const metade = div(num(1), num(2));
+  const cos2u = mul(metade, func('cos', simplificar(mul(num(2), u))));
+  const identidade: Expr | null =
+    base.nome === 'sen'
+      ? sub(metade, cos2u)
+      : base.nome === 'cos'
+        ? soma(metade, cos2u)
+        : base.nome === 'tg'
+          ? sub(pot(func('sec', u), num(2)), num(1))
+          : base.nome === 'cotg'
+            ? sub(pot(func('csc', u), num(2)), num(1))
+            : null;
+  if (!identidade) return null;
+  return { regra: 'identidade trigonométrica', expansao: integral(identidade, v) };
+}
+
 // ─── Integração por partes (quadro 6) ──────────────────────────────────────────
+
+/**
+ * ∫ eᵃˣ·sen(bx) dx e ∫ eᵃˣ·cos(bx) dx: por partes duas vezes a integral volta a aparecer,
+ * e isolá-la dá a fórmula fechada eᵃˣ·(a·sen(bx) − b·cos(bx))/(a² + b²) (e a do cosseno,
+ * com os sinais trocados). Vale com qualquer argumento do primeiro grau.
+ */
+function partesCiclica(e: Expr, v: string): Aplicacao | null {
+  const lista = fatoresDeCima(e);
+  if (!lista || lista.length !== 2) return null;
+  const expo = lista.find((f) => f.tipo === 'pot' && iguais(f.base, E) && contem(f.exp, v));
+  const trig = lista.find((f) => f.tipo === 'func' && (f.nome === 'sen' || f.nome === 'cos') && contem(f.arg, v));
+  if (!expo || expo.tipo !== 'pot' || !trig || trig.tipo !== 'func') return null;
+  const inclinacao = (g: Expr): Fracao | null => {
+    const p = comoPotencias(g, v);
+    const c = p && coeficientes(p);
+    return c && c.length === 2 ? c[1]! : null;
+  };
+  const a = inclinacao(expo.exp);
+  const b = inclinacao(trig.arg);
+  if (!a || !b || b[0] === 0) return null;
+  const den = somaF(vezesF(a, a), vezesF(b, b));
+  const fa = vezesF(a, fracao(den[1], den[0]));
+  const fb = vezesF(b, fracao(den[1], den[0]));
+  const seno = mul(fracaoExpr(fa), func('sen', trig.arg));
+  const cosseno = mul(fracaoExpr(fb), func('cos', trig.arg));
+  const parentese = trig.nome === 'sen' ? sub(seno, cosseno) : soma(mul(fracaoExpr(fa), func('cos', trig.arg)), mul(fracaoExpr(fb), func('sen', trig.arg)));
+  return { regra: 'por partes', expansao: simplificar(mul(expo, parentese)) };
+}
 
 /**
  * ∫ u dv = u·v − ∫ v du. A escolha de u segue o LIATE: primeiro o logaritmo ou a arco-tangente
@@ -972,7 +1032,7 @@ function semRegra(e: Expr, v: string): string {
     return foraDoProjeto('frações parciais, por ser uma fração de polinômios', 'quadro 7');
   }
   if (e.tipo === 'pot' && e.base.tipo === 'func' && TRIGONOMETRICAS.has(e.base.nome)) {
-    return foraDoProjeto('identidades trigonométricas', 'quadro 9');
+    return foraDoProjeto('identidades trigonométricas de potência maior que 2', 'quadro 9');
   }
   if (e.tipo === 'mul' && fatores(e).some((f) => polinomio(f, v)) && fatores(e).some((f) => transcendente(f, v))) {
     return foraDoProjeto('integração por partes', 'quadro 6');

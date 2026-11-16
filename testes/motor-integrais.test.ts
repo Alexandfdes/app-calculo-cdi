@@ -289,7 +289,7 @@ describe('Integral imprópria em que F também explode, mas o limite lateral de 
 
 describe('O que continua de fora: o motor avisa em vez de errar', () => {
   const avisos: [string, RegExp][] = [
-    ['sen(x)^2', /identidades trigonométricas/],
+    ['sen(x)^3', /identidades trigonométricas/],
     ['abs(x)', /integral definida/],
     ['x^x', /fora do conteúdo/],
   ];
