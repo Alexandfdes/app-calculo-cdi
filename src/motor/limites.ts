@@ -1204,7 +1204,8 @@ function noPonto(f: FuncaoDoLimite, a: number, ctx: Contexto): ResultadoLimite {
     const esq = lado(f.esquerda, -1);
     const dir = lado(f.direita, 1);
     const valorEmA = avaliarFuncao(f, a, x);
-    return concluir(f, a, ctx, esq, dir, Number.isFinite(valorEmA) ? valorEmA : null, false);
+    const formulaEmA = f.corteNaEsquerda ? f.esquerda : f.direita;
+    return concluir(f, a, ctx, esq, dir, Number.isFinite(valorEmA) && !singularEm(formulaEmA, a, x) ? valorEmA : null, false);
   }
 
   const e = f.tipo === 'partes' ? (a < f.corte ? f.esquerda : f.direita) : f.e;
@@ -1212,7 +1213,8 @@ function noPonto(f: FuncaoDoLimite, a: number, ctx: Contexto): ResultadoLimite {
     registrar(ctx, 'por partes', `Perto de x = ${textoPonto}, longe do corte em x = ${paraTexto(f.textoCorte)}, f vale ${paraTexto(e)}.`);
   }
   const fa = avaliar(e, { [x]: a });
-  const valorEmA = Number.isFinite(fa) ? fa : null;
+  // tg(π/2) em ponto flutuante dá ~1,6·10¹⁶, não NaN: a estrutura decide se f(a) existe
+  const valorEmA = Number.isFinite(fa) && !singularEm(e, a, x) ? fa : null;
   const esqDireta = substituicao(e, { a, lado: -1 }, x);
   const dirDireta = substituicao(e, { a, lado: 1 }, x);
   if (esqDireta && dirDireta) {

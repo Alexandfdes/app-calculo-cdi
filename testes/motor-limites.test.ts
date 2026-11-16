@@ -262,3 +262,22 @@ describe('0/0 com raiz de índice maior que 2: mudança de variável', () => {
     expect(tecnicas('(sqrt(x) - 2)/(x - 4)', 4)).not.toContain('mudança de variável');
   });
 });
+
+describe('f(a) em singularidade de ponto flutuante não existe', () => {
+  it('tg em π/2: o limite não existe e f(π/2) também não (nada de 1,6·10¹⁶)', () => {
+    const r = calcularLimite('tg(x)', 'pi/2');
+    expect(r.valorEmA).toBeNull();
+    expect([r.esquerda, r.direita, r.limite]).toEqual(['+∞', '-∞', 'não existe']);
+  });
+  it('cotg e csc em π, sec em π/2: f(a) nula também', () => {
+    expect(calcularLimite('cotg(x)', 'pi').valorEmA).toBeNull();
+    expect(calcularLimite('csc(x)', 'pi').valorEmA).toBeNull();
+    expect(calcularLimite('sec(x)', 'pi/2').valorEmA).toBeNull();
+  });
+  it('f por partes com tg no corte: f(corte) nula', () => {
+    expect(calcularLimite('x < pi/2 ? tg(x) : 0', 'pi/2').valorEmA).toBe(0);
+  });
+  it('onde f(a) existe de verdade, continua existindo', () => {
+    expect(calcularLimite('tg(x)', 'pi/4').valorEmA as number).toBeCloseTo(1, 10);
+  });
+});

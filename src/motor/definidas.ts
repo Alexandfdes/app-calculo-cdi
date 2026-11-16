@@ -37,6 +37,22 @@ export interface ResultadoIntegralDefinida {
    * A integral converge quando os dois são números.
    */
   noInfinito?: [ValorLimite | 'não existe' | null, ValorLimite | 'não existe' | null];
+  /**
+   * Só quando F não existe em alguma descontinuidade de f, mas o limite lateral de F aí é um
+   * número: o TFC em pedaços, com o limite no lugar de F na ponta marcada (integral imprópria).
+   */
+  parcelas?: ParcelaImpropria[];
+}
+
+/** Um pedaço de [a, b] do TFC em pedaços: Fa e Fb são F na ponta, ou o limite lateral de F. */
+export interface ParcelaImpropria {
+  a: number;
+  b: number;
+  Fa: number;
+  Fb: number;
+  /** F não existe na ponta: Fa (ou Fb) é o limite lateral de F, e não F no ponto. */
+  limiteEmA: boolean;
+  limiteEmB: boolean;
 }
 
 /** Distância abaixo da qual dois pontos são o mesmo; também a vizinhança de um ponto sem valor. */
@@ -80,8 +96,15 @@ export function integralDefinida(
     return { ...comum, cortes, valor: va <= vb ? area : -area };
   }
 
-  const explode = descontinuidades.some((c) => pontosSemValor(primitiva.resultado, x, c - FOLGA, c + FOLGA).length > 0);
-  if (explode) return { ...comum, cortes: [], valor: 'diverge' };
+  const singulares = descontinuidades.filter((c) => pontosSemValor(primitiva.resultado, x, c - FOLGA, c + FOLGA).length > 0);
+  if (singulares.length > 0) {
+    // F também explode na descontinuidade: vale o limite lateral de F, quando ele é um número
+    if (semFim) return { ...comum, cortes: [], valor: 'diverge' };
+    const parcelas = parcelasComLimites(primitiva.resultado, lo, hi, singulares, x);
+    if (!parcelas) return { ...comum, cortes: [], valor: 'diverge' };
+    const soma = parcelas.reduce((t, q) => t + (q.Fb - q.Fa), 0);
+    return { ...comum, cortes: [], parcelas, valor: va <= vb ? soma : -soma };
+  }
   if (semFim) {
     // integral imprópria: F(±∞) é o limite de F
     const naPonta = (v: number): ValorLimite | 'não existe' | null => (Number.isFinite(v) ? null : limiteDaPrimitiva(primitiva.resultado, v, x));
@@ -107,6 +130,15 @@ export function descreverIntegralDefinida(r: ResultadoIntegralDefinida): string[
   const F = (t: number): number => avaliar(r.primitiva.resultado, { [x]: t });
   const linhas = [`Primitiva de ${g}: F(${x}) = ${paraTexto(r.primitiva.resultado)}`];
   const pontos = (lista: number[]): string => lista.map(numeroBonito).join(', ');
+
+  if (r.parcelas) {
+    linhas.push(`${f} e F não existem em ${x} = ${pontos(r.descontinuidades)}: no lugar de F aí, entra o limite lateral de F (integral imprópria).`);
+    const lado = (t: number, deLimite: boolean, seta: '−' | '+'): string => (deLimite ? `lim de F com ${x} → ${numeroBonito(t)}${seta === '−' ? '⁻' : '⁺'}` : `F(${numeroBonito(t)})`);
+    const trechos = r.parcelas.map((q) => `[${lado(q.b, q.limiteEmB, '−')}] − [${lado(q.a, q.limiteEmA, '+')}] = ${numeroBonito(q.Fb)} − ${q.Fa < 0 ? `(${numeroBonito(q.Fa)})` : numeroBonito(q.Fa)}`);
+    linhas.push(`TFC com limites: ${trechos.join('; ')}`);
+    linhas.push(`Total = ${numeroBonito(r.valor as number)}${va <= vb ? '' : ' (limites trocados: o sinal inverte)'}`);
+    return linhas;
+  }
 
   if (r.noInfinito) {
     const [lo, hi] = va <= vb ? [va, vb] : [vb, va];
@@ -166,6 +198,39 @@ function limiteDeIntegracao(limite: number | string, x: string): [Expr, number] 
   const valor = avaliar(expr);
   if (Number.isNaN(valor)) throw new ErroDeEntrada('O limite de integração precisa ser um número real, inf ou -inf.');
   return [expr, valor];
+}
+
+/**
+ * O TFC em pedaços entre as singularidades de F: em cada ponta onde F não existe entra o limite
+ * lateral de F (calculado pelo motor de limites). Null quando algum desses limites não é um
+ * número (a integral imprópria diverge) ou o motor de limites não o resolve.
+ */
+function parcelasComLimites(F: Expr, lo: number, hi: number, singulares: number[], x: string): ParcelaImpropria[] | null {
+  const laterais = new Map<number, { esquerda: number | null; direita: number | null }>();
+  for (const c of singulares) {
+    try {
+      const r = calcularLimite(F, c, x);
+      laterais.set(c, {
+        esquerda: typeof r.esquerda === 'number' ? r.esquerda : null,
+        direita: typeof r.direita === 'number' ? r.direita : null,
+      });
+    } catch {
+      return null;
+    }
+  }
+  const singularEm = (t: number): number | undefined => singulares.find((c) => Math.abs(c - t) <= FOLGA);
+  const marcos = [lo, ...singulares.filter((c) => c - lo > FOLGA && hi - c > FOLGA), hi];
+  const parcelas: ParcelaImpropria[] = [];
+  for (let i = 0; i + 1 < marcos.length; i++) {
+    const [p, q] = [marcos[i]!, marcos[i + 1]!];
+    const sp = singularEm(p);
+    const sq = singularEm(q);
+    const Fa = sp === undefined ? avaliar(F, { [x]: p }) : laterais.get(sp)!.direita;
+    const Fb = sq === undefined ? avaliar(F, { [x]: q }) : laterais.get(sq)!.esquerda;
+    if (Fa === null || Fb === null || !Number.isFinite(Fa) || !Number.isFinite(Fb)) return null;
+    parcelas.push({ a: p, b: q, Fa, Fb, limiteEmA: sp !== undefined, limiteEmB: sq !== undefined });
+  }
+  return parcelas;
 }
 
 /**

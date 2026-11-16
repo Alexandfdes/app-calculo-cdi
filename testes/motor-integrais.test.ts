@@ -269,6 +269,24 @@ describe('Técnicas além da lista do projeto: por partes, frações parciais e 
   }
 });
 
+describe('Integral imprópria em que F também explode, mas o limite lateral de F existe', () => {
+  it('∫ de 0 a 1 de ln(x) = −1 (x·ln x → 0)', () => {
+    const r = integralDefinida('ln(x)', '0', '1');
+    expect(r.valor as number).toBeCloseTo(-1, 10);
+    expect(r.descontinuidades).toEqual([0]);
+  });
+  it('∫ de 0 a 1 de x*ln(x) = −1/4', () => {
+    expect(integralDefinida('x*ln(x)', '0', '1').valor as number).toBeCloseTo(-0.25, 10);
+  });
+  it('com os limites trocados o sinal inverte: ∫ de 1 a 0 de ln(x) = 1', () => {
+    expect(integralDefinida('ln(x)', '1', '0').valor as number).toBeCloseTo(1, 10);
+  });
+  it('∫ de −1 a 1 de 1/x² continua divergindo, e ∫ de 0 a π de tg x também', () => {
+    expect(integralDefinida('1/x^2', '-1', '1').valor).toBe('diverge');
+    expect(integralDefinida('tg(x)', '0', 'pi').valor).toBe('diverge');
+  });
+});
+
 describe('O que continua de fora: o motor avisa em vez de errar', () => {
   const avisos: [string, RegExp][] = [
     ['sen(x)^2', /identidades trigonométricas/],

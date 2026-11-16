@@ -559,7 +559,9 @@ function passosDaDefinida(r: ResultadoIntegralDefinida, a: number, b: number): I
     const fim =
       r.valor === 'diverge'
         ? 'F também não tem valor aí, então a integral imprópria <strong>diverge</strong>. A conta ingênua F(b) − F(a) daria um número errado.'
-        : 'Mas F tem valor aí: a integral imprópria converge.';
+        : r.parcelas
+          ? 'F também não tem valor aí, mas o limite lateral de F tem: ele entra no lugar de F (integral imprópria).'
+          : 'Mas F tem valor aí: a integral imprópria converge.';
     itens.push({
       etiqueta: 'descontinuidade',
       html: `<span class="texto">f não existe em ${X} = ${escapar(pontos)}, dentro de ${escapar(intervalo)}, e o TFC pede f contínua em [a, b]. ${fim}</span>`,
@@ -584,6 +586,15 @@ function passosDaDefinida(r: ResultadoIntegralDefinida, a: number, b: number): I
     return itens;
   }
   if (r.valor === 'diverge') return itens;
+  if (r.parcelas) {
+    const lado = (t: number, deLimite: boolean, seta: '−' | '+'): string =>
+      deLimite ? `lim<span class="op">${X} → ${escapar(bonito(t))}${seta === '−' ? '⁻' : '⁺'}</span> F` : `F(${escapar(bonito(t))})`;
+    const trechos = r.parcelas
+      .map((q) => `${lado(q.b, q.limiteEmB, '−')}<span class="op">−</span>${lado(q.a, q.limiteEmA, '+')}${IGUAL}${escapar(bonito(q.Fb))}<span class="op">−</span>${q.Fa < 0 ? `(${escapar(bonito(q.Fa))})` : escapar(bonito(q.Fa))}`)
+      .join('<span class="op">;</span> ');
+    itens.push({ etiqueta: 'tfc', html: `${trechos}${IGUAL}${escapar(bonito(r.valor))}` });
+    return itens;
+  }
   const Fx = avaliador(F);
   const [limA, limB] = [formulaHTML(r.a), formulaHTML(r.b)];
   if (r.entrada.tipo === 'func' && r.entrada.nome === 'abs') {
