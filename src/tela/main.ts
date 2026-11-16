@@ -267,6 +267,7 @@ const ETIQUETAS: Record<Etiqueta, { nome: string; cor: string }> = {
   imprópria: { nome: 'Integral imprópria', cor: '#fb923c' },
   'substituição direta': { nome: 'Substituição direta', cor: '#4ade80' },
   'por partes': { nome: 'Por partes', cor: '#facc15' },
+  'identidade trigonométrica': { nome: 'Identidade', cor: '#5eead4' },
   'forma indeterminada': { nome: 'Forma indeterminada', cor: '#94a3b8' },
   fatoração: { nome: 'Fatoração', cor: '#fb923c' },
   racionalização: { nome: 'Racionalização', cor: '#e879f9' },
@@ -851,15 +852,98 @@ function pontosDoGrafico(a: AnaliseFuncao): PontoDoGrafico[] {
   });
 }
 
+/** Onde f cresce e onde decresce: o sinal de f′, com as viradas achadas por bisseção. */
+function monotonia(a: AnaliseFuncao, janela: [number, number]): { texto: string; setas: { x: number; sobe: boolean }[] } | null {
+  if (a.tipo === 'constante') return { texto: 'não cresce nem decresce: f é constante', setas: [] };
+  let df: Funcao;
+  try {
+    df = avaliador(derivar(a.entrada).resultado);
+  } catch {
+    return null;
+  }
+  const arred = (v: number): number => (Math.abs(v - Math.round(v)) < 1e-6 ? Math.round(v) : Math.round(v * 1e6) / 1e6);
+  const furos = a.dominio.furos ? a.assintotas.verticais : [];
+  const trechos: { de: number; ate: number; deTexto: number; ateTexto: number; sobe: boolean }[] = [];
+  for (const i of a.dominio.intervalos) {
+    const esquerda = Math.max(i.de, janela[0]);
+    const direita = Math.min(i.ate, janela[1]);
+    if (!(direita - esquerda > 1e-9)) continue;
+    const cortes = [esquerda, ...furos.filter((v) => v > esquerda && v < direita), direita].sort((p, q) => p - q);
+    for (let k = 0; k + 1 < cortes.length; k++) {
+      const [de, ate] = [cortes[k]!, cortes[k + 1]!];
+      if (!(ate - de > 1e-9)) continue;
+      // o sinal de f′ em amostras do trecho; onde ele troca, a bisseção acha a virada
+      const margem = (ate - de) / 300;
+      const viradas: number[] = [];
+      let xAnterior = de + margem;
+      let sinalAnterior = 0;
+      for (let j = 0; j <= 160; j++) {
+        const x = de + margem + ((ate - de - 2 * margem) * j) / 160;
+        const v = df(x);
+        const s = Number.isFinite(v) ? Math.sign(v) : 0;
+        if (s !== 0) {
+          if (sinalAnterior !== 0 && s !== sinalAnterior) {
+            let [p, q] = [xAnterior, x];
+            for (let passo = 0; passo < 50; passo++) {
+              const meio = (p + q) / 2;
+              const vm = df(meio);
+              if (Number.isFinite(vm) && Math.sign(vm) === sinalAnterior) p = meio;
+              else q = meio;
+            }
+            viradas.push(arred((p + q) / 2));
+          }
+          sinalAnterior = s;
+        }
+        xAnterior = x;
+      }
+      const fronteiras = [de, ...viradas, ate];
+      for (let j = 0; j + 1 < fronteiras.length; j++) {
+        const [p, q] = [fronteiras[j]!, fronteiras[j + 1]!];
+        const meio = df((p + q) / 2);
+        if (!Number.isFinite(meio) || meio === 0) continue;
+        const sobe = meio > 0;
+        // o texto vai até a ponta verdadeira do domínio quando o trecho encosta na janela
+        const deTexto = j === 0 && p === esquerda && i.de < esquerda ? i.de : p;
+        const ateTexto = j + 2 === fronteiras.length && q === direita && i.ate > direita ? i.ate : q;
+        const ultimo = trechos[trechos.length - 1];
+        if (ultimo && ultimo.sobe === sobe && Math.abs(ultimo.ate - p) < 1e-9) {
+          ultimo.ate = q;
+          ultimo.ateTexto = ateTexto;
+        } else {
+          trechos.push({ de: p, ate: q, deTexto, ateTexto, sobe });
+        }
+      }
+    }
+  }
+  if (trechos.length === 0) return null;
+  const setas = trechos.map((t) => ({ x: (t.de + t.ate) / 2, sobe: t.sobe })).slice(0, 8);
+  if (a.tipo === 'trigonométrica' || trechos.length > 4) {
+    return { texto: 'sobe e desce alternadamente, a cada meio período', setas };
+  }
+  const fmt = (v: number): string => (v === Number.NEGATIVE_INFINITY ? '−∞' : v === Number.POSITIVE_INFINITY ? '+∞' : numeroDaAnalise(a, v));
+  const lista = (lado: boolean): string =>
+    trechos
+      .filter((t) => t.sobe === lado)
+      .map((t) => `(${fmt(t.deTexto)}, ${fmt(t.ateTexto)})`)
+      .join(' e ');
+  const sobe = lista(true);
+  const desce = lista(false);
+  if (!desce) return { texto: 'cresce no domínio inteiro', setas };
+  if (!sobe) return { texto: 'decresce no domínio inteiro', setas };
+  return { texto: `cresce em ${sobe}; decresce em ${desce}`, setas };
+}
+
 function mostrarFuncao(texto: string): void {
   const a = analisarFuncao(texto);
   const exemplo = exemploAtual?.f === texto ? exemploAtual : null;
   const janela = exemplo?.janela ?? a.janela;
+  const cresce = monotonia(a, janela);
   const outraForma = paraTexto(a.forma) !== paraTexto(a.entrada);
   const formula = `<span class="nome-funcao">f(${X})</span>${IGUAL}${formulaHTML(a.entrada)}${outraForma ? `${IGUAL}${formulaHTML(a.forma)}` : ''}`;
   const ficha: [string, string, string][] = [
     ['Domínio', `D(f) = ${a.dominio.texto}`, 'dominio'],
     ['Imagem', `Im(f) = ${a.imagem.texto}`, 'imagem'],
+    ...(cresce ? [['Crescimento', cresce.texto, ''] as [string, string, string]] : []),
     ...a.caracteristicas.map((c): [string, string, string] => [c.nome, c.valor, '']),
   ];
   const extra = `
@@ -886,6 +970,7 @@ function mostrarFuncao(texto: string): void {
         furos: a.dominio.furos ? a.assintotas.verticais : [],
         imagem: a.imagem.intervalos,
         pontos: pontosDoGrafico(a),
+        ...(cresce && cresce.setas.length > 0 ? { setas: cresce.setas } : {}),
         verticais: a.assintotas.verticais,
         horizontal: a.assintotas.horizontal,
       },
@@ -1059,12 +1144,15 @@ function calcular(): void {
     mostrarErro('Digite uma função para começar, ou toque num dos exemplos.', '');
     return;
   }
+  const gravar = gravarProxima;
+  gravarProxima = false;
   try {
     if (modo === 'funcao') mostrarFuncao(texto);
     else if (modo === 'limite') mostrarLimite(texto);
     else if (modo === 'derivada') mostrarDerivada(texto);
     else if (modo === 'integral') mostrarIntegral(texto);
     else mostrarDefinida(texto);
+    if (gravar) guardarNoHistorico();
   } catch (erro) {
     if (erro instanceof ErroDeEntrada) mostrarErro(erro.message, texto);
     else {
@@ -1153,6 +1241,7 @@ async function usarExemplo(exemplo: Exemplo): Promise<void> {
   }
   if (minha !== digitacao) return;
   atualizarPrevia();
+  gravarProxima = true;
   calcular();
 }
 
@@ -1252,9 +1341,82 @@ function calcularConta(conta: Conta): void {
 
 // ─── Ligações ──────────────────────────────────────────────────────────────────
 
+interface ItemHistorico {
+  modo: Modo;
+  f: string;
+  ponto?: string;
+  a?: string;
+  b?: string;
+}
+
+const CHAVE_HISTORICO = 'calculo-cdi-recentes';
+const MODO_NOME: Record<Modo, string> = { funcao: 'função', limite: 'limite', derivada: 'derivada', integral: 'integral', definida: 'definida' };
+/** A próxima conta entra no histórico? Só as pedidas de verdade; a digitação ao vivo, não. */
+let gravarProxima = false;
+let historico: ItemHistorico[] = [];
+try {
+  historico = JSON.parse(localStorage.getItem(CHAVE_HISTORICO) ?? '[]') as ItemHistorico[];
+} catch {
+  historico = [];
+}
+
+function guardarNoHistorico(): void {
+  const item: ItemHistorico = { modo, f: campo.value.trim() };
+  if (modo === 'limite') item.ponto = campoPonto.value.trim();
+  if (modo === 'definida') {
+    item.a = campoA.value.trim();
+    item.b = campoB.value.trim();
+  }
+  const chave = JSON.stringify(item);
+  historico = [item, ...historico.filter((h) => JSON.stringify(h) !== chave)].slice(0, 8);
+  try {
+    localStorage.setItem(CHAVE_HISTORICO, JSON.stringify(historico));
+  } catch {
+    // sem armazenamento (janela privada): o histórico vive só nesta visita
+  }
+  mostrarHistorico();
+}
+
+function mostrarHistorico(): void {
+  elemento('recentes-titulo').hidden = historico.length === 0;
+  elemento('recentes').replaceChildren(
+    ...historico.map((h) => {
+      const botao = document.createElement('button');
+      botao.type = 'button';
+      botao.className = 'chip formula';
+      let formula: string;
+      try {
+        formula = formulaHTML(lerExpressao(h.f));
+      } catch {
+        formula = escapar(h.f);
+      }
+      const extra =
+        h.modo === 'limite'
+          ? ` <span class="chip-limites">${X} → ${escapar(h.ponto ?? '')}</span>`
+          : h.modo === 'definida'
+            ? ` <span class="chip-limites">de ${escapar(h.a ?? '')} a ${escapar(h.b ?? '')}</span>`
+            : '';
+      botao.innerHTML = `<span class="chip-rotulo">${MODO_NOME[h.modo]}</span> ${formula}${extra}`;
+      botao.setAttribute('aria-label', `Refazer ${MODO_NOME[h.modo]} de ${h.f}`);
+      botao.addEventListener('click', () => {
+        const exemplo: Exemplo = { f: h.f };
+        if (h.ponto !== undefined) exemplo.ponto = h.ponto;
+        if (h.a !== undefined) exemplo.a = h.a;
+        if (h.b !== undefined) exemplo.b = h.b;
+        const radio = document.getElementById(`modo-${h.modo}`) as HTMLInputElement | null;
+        if (radio) radio.checked = true;
+        gravarProxima = true;
+        trocarModo(h.modo, exemplo);
+      });
+      return botao;
+    }),
+  );
+}
+
 formulario.addEventListener('submit', (ev) => {
   ev.preventDefault();
   digitacao++;
+  gravarProxima = true;
   calcular();
 });
 
@@ -1290,6 +1452,7 @@ if (calmo) document.querySelectorAll('animateMotion').forEach((animacao) => anim
 criarFundo();
 montarExemplos();
 apontarAula(modo);
+mostrarHistorico();
 const navegacao = iniciarConteudo(calcularConta);
 // Só se o aluno ainda não trocou de modo nem digitou nada nesse meio-tempo
 setTimeout(() => {

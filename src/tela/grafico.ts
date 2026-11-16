@@ -40,6 +40,8 @@ export interface Estudo {
   pontos: PontoDoGrafico[];
   verticais: number[];
   horizontal: number | null;
+  /** Setas no meio de cada trecho: para cima onde f cresce, para baixo onde decresce. */
+  setas?: { x: number; sobe: boolean }[];
 }
 
 export type Cena =
@@ -343,7 +345,32 @@ export class Grafico {
     });
     const pEntrada = progresso(t, inicioPontos + e.pontos.length * 170 + 300, 450);
     if (pEntrada > 0) this.entradaESaida(f, e, this.posicao(t, [this.vista.x0, this.vista.x1]), pEntrada);
+    const pSetas = progresso(t, inicioPontos + e.pontos.length * 170 + 650, 500);
+    if (pSetas > 0 && e.setas) this.setasDeCrescimento(f, e.setas, pSetas);
     return true;
+  }
+
+  /** Uma seta sobre a curva no meio de cada trecho: ↗ onde f cresce, ↘ onde decresce. */
+  private setasDeCrescimento(f: Funcao, setas: { x: number; sobe: boolean }[], alfa: number): void {
+    const { ctx } = this;
+    const { x0, x1, y0, y1 } = this.vista;
+    ctx.save();
+    ctx.globalAlpha = alfa;
+    ctx.font = `700 15px ${FONTE}`;
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(7, 11, 24, 0.9)';
+    for (const s of setas) {
+      if (s.x < x0 || s.x > x1) continue;
+      const y = f(s.x);
+      if (!Number.isFinite(y) || y < y0 || y > y1) continue;
+      const simbolo = s.sobe ? '\u2197' : '\u2198';
+      ctx.fillStyle = s.sobe ? '#4ade80' : '#fb7185';
+      const [cx, cy] = [this.px(s.x), this.py(y) - 14];
+      ctx.strokeText(simbolo, cx, cy);
+      ctx.fillText(simbolo, cx, cy);
+    }
+    ctx.restore();
   }
 
   /** Assíntotas tracejadas, com a equação de cada uma. */
