@@ -186,7 +186,7 @@ type Valor =
   | { tipo: 'infinito'; sinal: Lado }
   | { tipo: 'oscila'; limitada: boolean }
   | { tipo: 'sem valor' }
-  | { tipo: 'indeterminada'; forma: string };
+  | { tipo: 'indeterminada'; forma: string; limitada?: boolean };
 
 interface Contexto {
   x: string;
@@ -194,6 +194,10 @@ interface Contexto {
   profundidade: number;
   /** O ponto como foi escrito, para mostrar x − π em vez de x − 3.14159. */
   ponto: Expr | null;
+  /** Quantas contas ainda cabem: a recursão reabre subexpressões que crescem a cada derivada. */
+  orcamento: { restante: number };
+  /** Quantas vezes seguidas a regra de L'Hôpital já foi usada. */
+  derivadas?: number;
 }
 
 const finito = (v: number, exato?: Expr): Valor => (Number.isFinite(v) ? { tipo: 'finito', v: Math.abs(v) < 1e-12 ? 0 : v, exato } : { tipo: 'sem valor' });
@@ -283,9 +287,14 @@ function substituicao(e: Expr, alvo: { a: number; lado: Lado }, x: string): Valo
 // ─── O limite, regra por regra ─────────────────────────────────────────────────
 
 function limite(e: Expr, alvo: Alvo, ctx: Contexto): Valor {
+  if (--ctx.orcamento.restante < 0) return indeterminada('uma conta comprida demais');
   const v = limiteDireto(e, alvo, ctx);
   if (v.tipo !== 'indeterminada' || ctx.profundidade > 60) return v;
   const dentro: Contexto = { ...ctx, profundidade: ctx.profundidade + 1 };
+  if ((e.tipo === 'soma' || e.tipo === 'sub') && v.forma === '∞ − ∞') {
+    const l = diferencaDeLogs(e, alvo, dentro);
+    if (l) return l;
+  }
   // ∞ − ∞ com raiz: o conjugado; e, no infinito, a ordem de crescimento
   if (e.tipo === 'sub' && v.forma === '∞ − ∞') {
     const c = conjugadoNoInfinito(e.a, e.b, alvo, dentro);
@@ -305,14 +314,46 @@ function limite(e: Expr, alvo: Alvo, ctx: Contexto): Valor {
  * (x·ln x = ln x / (1/x)); e potências com x na base e no expoente, como xˣ, viram e^(x·ln x).
  */
 function pelaDerivada(e: Expr, forma: string, alvo: Alvo, ctx: Contexto): Valor | null {
-  if (ctx.profundidade > 40) return null;
-  if (e.tipo === 'div' && (forma === '0/0' || forma === '∞/∞')) return lHopital(e.a, e.b, forma, alvo, ctx);
+  if (ctx.profundidade > 40 || ctx.orcamento.restante <= 0) return null;
+  const serve = (v: Valor | null): v is Valor => v !== null && v.tipo !== 'indeterminada';
+  if (e.tipo === 'div') {
+    if (forma === '0/0' || forma === '∞/∞') {
+      const r = lHopital(e.a, e.b, forma, alvo, ctx);
+      if (r) return r;
+    }
+    // a soma em cima dividida termo a termo: (x + sen x)/x = 1 + sen x/x
+    const [N, D] = [e.a, e.b];
+    if (N.tipo === 'soma' || N.tipo === 'sub') {
+      const [p, q] = [limite(div(N.a, D), alvo, ctx), limite(div(N.b, D), alvo, ctx)];
+      const total = somar(p, N.tipo === 'soma' ? q : oposto(q));
+      if (serve(total) && total.tipo !== 'oscila') return total;
+    }
+    // e a soma embaixo, pelo inverso: x/(x + sen x) é 1 sobre (1 + sen x/x)
+    if (D.tipo === 'soma' || D.tipo === 'sub') {
+      const [p, q] = [limite(div(D.a, N), alvo, ctx), limite(div(D.b, N), alvo, ctx)];
+      const inverso = somar(p, D.tipo === 'soma' ? q : oposto(q));
+      if (inverso.tipo === 'finito' && inverso.v !== 0) return finito(1 / inverso.v);
+      if (inverso.tipo === 'infinito') return finito(0);
+    }
+    const simples = simplificar(e);
+    if (!iguais(simples, e)) {
+      const r = limite(simples, alvo, ctx);
+      if (serve(r)) return r;
+    }
+    return null;
+  }
   if (e.tipo === 'mul' && forma === '0 · ∞') {
     const la = limiteDireto(e.a, alvo, ctx);
     const [vaiAZero, vaiAoInfinito] = la.tipo === 'finito' && la.v === 0 ? [e.a, e.b] : [e.b, e.a];
-    return lHopital(vaiAoInfinito, div(num(1), vaiAZero), '∞/∞', alvo, ctx);
+    // duas escritas: ∞/(1/0) e 0/(1/∞); x·ln x pede a primeira, x·cotg x = x/tg x pede a segunda
+    return (
+      lHopital(vaiAoInfinito, div(num(1), vaiAZero), '∞/∞', alvo, ctx) ??
+      lHopital(vaiAZero, simplificar(div(num(1), vaiAoInfinito)), '0/0', alvo, ctx)
+    );
   }
   if (e.tipo === 'pot' && contem(e.base, ctx.x) && contem(e.exp, ctx.x)) {
+    // base negativa perto do ponto: a potência não tem valor real ali
+    if ('a' in alvo && sinalPerto(e.base, alvo, ctx.x) < 0) return { tipo: 'sem valor' };
     const expoente = simplificar(mul(e.exp, func('ln', e.base)));
     const antes = ctx.passos.length;
     registrar(ctx, 'L’Hôpital', `Com ${ctx.x} na base e no expoente, escreve-se ${paraTexto(e)} = e^(${paraTexto(expoente)}) e calcula-se o limite do expoente.`);
@@ -326,8 +367,74 @@ function pelaDerivada(e: Expr, forma: string, alvo: Alvo, ctx: Contexto): Valor 
   return null;
 }
 
+/** k·ln(u), com k constante: o que pode se juntar num logaritmo só. */
+function comoLog(t: Expr, x: string): { c: number; u: Expr } | null {
+  if (t.tipo === 'func' && t.nome === 'ln') return { c: 1, u: t.arg };
+  if (t.tipo === 'neg') {
+    const l = comoLog(t.a, x);
+    return l ? { c: -l.c, u: l.u } : null;
+  }
+  if (t.tipo === 'mul') {
+    const [k, resto] = !contem(t.a, x) ? [t.a, t.b] : !contem(t.b, x) ? [t.b, t.a] : [null, null];
+    const l = k && resto ? comoLog(resto, x) : null;
+    return l && k ? { c: l.c * avaliar(k), u: l.u } : null;
+  }
+  if (t.tipo === 'div' && !contem(t.b, x)) {
+    const l = comoLog(t.a, x);
+    return l ? { c: l.c / avaliar(t.b), u: l.u } : null;
+  }
+  return null;
+}
+
+/**
+ * ∞ − ∞ entre logaritmos: ln|x − 1|/2 − ln|x + 1|/2 = (1/2)·ln|(x − 1)/(x + 1)|. Juntam-se os
+ * logaritmos num só e calcula-se o limite do que fica dentro; o que não é logaritmo entra à parte.
+ */
+function diferencaDeLogs(e: Expr, alvo: Alvo, ctx: Contexto): Valor | null {
+  const logs: { c: number; u: Expr }[] = [];
+  const outros: Expr[] = [];
+  const visitar = (t: Expr, sinal: 1 | -1): void => {
+    if (t.tipo === 'soma' || t.tipo === 'sub') {
+      visitar(t.a, sinal);
+      visitar(t.b, t.tipo === 'soma' ? sinal : sinal === 1 ? -1 : 1);
+      return;
+    }
+    const l = comoLog(t, ctx.x);
+    if (l && Number.isFinite(l.c) && l.c !== 0) logs.push({ c: sinal * l.c, u: l.u });
+    else outros.push(sinal > 0 ? t : neg(t));
+  };
+  visitar(e, 1);
+  if (logs.length < 2) return null;
+  const k = Math.min(...logs.map((l) => Math.abs(l.c)));
+  const expoentes = logs.map((l) => l.c / k);
+  if (!expoentes.every((n) => Math.abs(n - Math.round(n)) < 1e-9 && Math.abs(n) <= 12)) return null;
+  let [cima, baixo]: [Expr, Expr] = [num(1), num(1)];
+  logs.forEach((l, i) => {
+    const n = Math.round(expoentes[i]!);
+    const u = l.u.tipo === 'func' && l.u.nome === 'abs' ? l.u.arg : l.u;
+    const fator = Math.abs(n) === 1 ? u : pot(u, num(Math.abs(n)));
+    if (n > 0) cima = mul(cima, fator);
+    else baixo = mul(baixo, fator);
+  });
+  const dentro = simplificar(div(cima, baixo));
+  const L = limite(dentro, alvo, ctx);
+  let valor: Valor;
+  if (L.tipo === 'finito') valor = L.v === 0 ? infinito(-1) : finito(k * Math.log(Math.abs(L.v)));
+  else if (L.tipo === 'infinito') valor = infinito(1);
+  else return null;
+  registrar(
+    ctx,
+    'forma indeterminada',
+    `∞ − ∞ entre logaritmos: eles se juntam num só, ${bonito(k)}·ln|${paraTexto(dentro)}|, e o que fica dentro vai a ${textoDoValor(L)}.`,
+  );
+  if (outros.length === 0) return valor;
+  const total = somar(valor, limite(outros.reduce((p, q) => soma(p, q)), alvo, ctx));
+  return total.tipo === 'indeterminada' ? null : total;
+}
+
 /** lim N/D = lim N′/D′ quando N/D é 0/0 ou ∞/∞ (e o novo limite existe). */
 function lHopital(N: Expr, D: Expr, forma: string, alvo: Alvo, ctx: Contexto): Valor | null {
+  if ((ctx.derivadas ?? 0) >= 3 || ctx.orcamento.restante <= 0) return null;
   let dN: Expr;
   let dD: Expr;
   try {
@@ -345,8 +452,9 @@ function lHopital(N: Expr, D: Expr, forma: string, alvo: Alvo, ctx: Contexto): V
     `Regra de L'Hôpital: a forma é ${forma}, então o limite é o mesmo do quociente das derivadas, ${paraTexto(dN)} sobre ${paraTexto(dD)}.`,
     [div(N, D), div(dN, dD), nova],
   );
-  const r = limite(nova, alvo, ctx);
-  if (r.tipo === 'indeterminada') {
+  const r = limite(nova, alvo, { ...ctx, derivadas: (ctx.derivadas ?? 0) + 1 });
+  // a regra só conclui quando o limite das derivadas existe: se ele oscila, nada se sabe do original
+  if (r.tipo === 'indeterminada' || r.tipo === 'oscila') {
     ctx.passos.length = antes;
     return null;
   }
@@ -407,13 +515,19 @@ function somar(p: Valor, q: Valor): Valor {
   if (p.tipo === 'infinito' && q.tipo === 'infinito') return p.sinal === q.sinal ? p : indeterminada('∞ − ∞');
   if (p.tipo === 'infinito') return q.tipo === 'oscila' && !q.limitada ? indeterminada('∞ + oscilação') : p;
   if (q.tipo === 'infinito') return p.tipo === 'oscila' && !p.limitada ? indeterminada('∞ + oscilação') : q;
-  if (p.tipo === 'oscila' && q.tipo === 'oscila') return indeterminada('oscilação + oscilação');
+  if (p.tipo === 'oscila' && q.tipo === 'oscila') return { tipo: 'indeterminada', forma: 'oscilação + oscilação', limitada: p.limitada && q.limitada };
   const oscila = p.tipo === 'oscila' ? p : q;
   return oscila;
 }
 
 /** Produto (propriedade 4): 0 · ∞ é indeterminada; limitado vezes algo que vai a 0 vai a 0 (confronto). */
 function multiplicar(p: Valor, q: Valor, alvo: Alvo, ctx: Contexto): Valor {
+  // soma de duas oscilações limitadas (sen x + cos x) vezes algo que vai a 0: confronto
+  const limitada = (v: Valor): boolean => v.tipo === 'indeterminada' && v.limitada === true;
+  if ((ehZero(p) && limitada(q)) || (ehZero(q) && limitada(p))) {
+    registrar(ctx, 'confronto', `${textoDoLado(alvo)}, um fator fica entre dois números e o outro vai a 0: pelo teorema do confronto, o produto vai a 0 (quadro 10).`);
+    return finito(0);
+  }
   const ruim = problema(p, q);
   if (ruim) return ruim;
   if (p.tipo === 'finito' && q.tipo === 'finito') return finito(p.v * q.v);
@@ -1156,7 +1270,7 @@ const mesmoNumero = (p: number, q: number): boolean => Math.abs(p - q) <= 1e-9 *
 export function calcularLimite(entrada: string | Expr, ponto: number | string, x = 'x'): ResultadoLimite {
   const funcaoLida: FuncaoDoLimite = typeof entrada === 'string' ? lerFuncaoDoLimite(entrada, x) : { tipo: 'expressao', e: entrada };
   const { a, expr } = lerPonto(ponto, x);
-  const ctx: Contexto = { x, passos: [], profundidade: 0, ponto: expr };
+  const ctx: Contexto = { x, passos: [], profundidade: 0, ponto: expr, orcamento: { restante: 4000 } };
   if (!Number.isFinite(a)) return noInfinito(funcaoLida, a > 0 ? 1 : -1, ctx);
   return noPonto(funcaoLida, a, ctx);
 }

@@ -564,7 +564,8 @@ export class Grafico {
       if (alfa > 0) this.retangulos(cena.f, lo, hi, n, crescer, alfa);
       if (n !== this.ultimoN) {
         this.ultimoN = n;
-        this.ouvintes.aoSomar?.(n, somaDeRiemann(cena.f, cena.a, cena.b, n));
+        const poloDentro = cena.diverge && cena.singularidades.some((s) => s > lo + 1e-9 && s < hi - 1e-9);
+        if (!poloDentro) this.ouvintes.aoSomar?.(n, somaDeRiemann(cena.f, cena.a, cena.b, n));
       }
     }
     this.curva(cena.f, this.cores.f, pCurva);

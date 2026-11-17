@@ -504,12 +504,16 @@ function fracoesParciais(e: Expr, v: string): Aplicacao | null {
       const C = solucao[i + 1]!;
       i++;
       if (k[0] === 0 && C[0] === 0) continue;
-      parcelas.push(div(simplificar(soma(mul(fracaoExpr(k), x), fracaoExpr(C))), t.denominador));
+      // numerador com inteiros e o denominador comum para fora: (-4x - 66)/q vezes 1/1025
+      const comum = (k[1] * C[1]) / mdc(k[1], C[1]);
+      const numerador = simplificar(soma(mul(num((k[0] * comum) / k[1]), x), num((C[0] * comum) / C[1])));
+      const fracaoSimples = div(numerador, t.denominador);
+      parcelas.push(comum === 1 ? fracaoSimples : mul(fracaoExpr([1, comum]), fracaoSimples));
       continue;
     }
     if (k[0] !== 0) parcelas.push(div(fracaoExpr(k), t.denominador));
   }
-  if (parcelas.length < 2) return null;
+  if (parcelas.length === 0 || (parcelas.length === 1 && iguais(simplificar(parcelas[0]!), simplificar(e)))) return null;
   const expansao = parcelas.map((p) => integral(p, v)).reduce((a, b) => soma(a, b));
   return { regra: 'frações parciais', expansao };
 }
@@ -1016,7 +1020,7 @@ const TRIGONOMETRICAS: ReadonlySet<NomeFuncao> = new Set<NomeFuncao>(['sen', 'co
 function semRegra(e: Expr, v: string): string {
   const texto = `∫ ${textoDoIntegrando(e)} d${v}`;
   const foraDoProjeto = (tecnica: string, onde: string): string =>
-    `Não há regra do projeto para ${texto}: ela pede ${tecnica} (Aula 4, ${onde}), que está na aula mas fora das regras do projeto.`;
+    `O motor não conseguiu resolver ${texto}: ela pede ${tecnica} (Aula 4, ${onde}) num caso que ele ainda não alcança.`;
   if (temModulo(e)) return `${texto}: o módulo só entra na integral definida, cortando o intervalo onde a função troca de sinal.`;
   if ((e.tipo === 'func' && e.nome === 'ln') || e.tipo === 'log') return foraDoProjeto('integração por partes', 'quadro 6');
   if (e.tipo === 'div' && polinomio(e.a, v) && polinomio(e.b, v)) {
@@ -1058,6 +1062,8 @@ function polinomio(e: Expr, v: string): boolean {
       const n = racional(e.exp);
       return polinomio(e.base, v) && n !== null && n[1] === 1 && n[0] >= 0;
     }
+    case 'div':
+      return polinomio(e.a, v) && !contem(e.b, v);
     default:
       return false;
   }

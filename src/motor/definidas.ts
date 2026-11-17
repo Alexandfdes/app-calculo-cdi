@@ -20,6 +20,8 @@ import type { ResultadoIntegral } from './integrais';
 import { calcularLimite, lerPonto } from './limites';
 import type { ValorLimite } from './limites';
 import { numeroBonito } from './numeros';
+import { comoPolinomio, valorEm } from './polinomios';
+import type { Polinomio } from './polinomios';
 
 export interface ResultadoIntegralDefinida {
   entrada: Expr;
@@ -82,7 +84,9 @@ export function integralDefinida(
   const F = (t: number): number => avaliar(primitiva.resultado, { [x]: t });
   const semFim = !Number.isFinite(lo) || !Number.isFinite(hi);
   if (semFim && comModulo) throw new ErroDeEntrada('Com módulo, o motor só calcula a área num intervalo finito.');
-  const descontinuidades = unicos(janelas(lo, hi).flatMap(([p, q, pontas]) => pontosSemValor(g, x, p, q, pontas)));
+  // os denominadores polinomiais dão as raízes no intervalo inteiro, por longe que estejam; o resto sai das janelas
+  const brutas = [...janelas(lo, hi).flatMap(([p, q, pontas]) => pontosSemValor(g, x, p, q, pontas)), ...pontosSemValor(g, x, lo, hi, [true, true], true)];
+  const descontinuidades = unicos(brutas.map((c) => afinar(g, x, c)));
   for (const [p, q] of janelas(lo, hi)) exigirValor(g, x, p, q, descontinuidades);
   const comum = { entrada: f, a: exprA, b: exprB, primitiva, descontinuidades: semFim ? descontinuidades.slice(0, 6) : descontinuidades };
 
@@ -262,10 +266,14 @@ function limiteDaPrimitiva(F: Expr, infinito: number, x: string): ValorLimite | 
 }
 
 /** Pontos de [lo, hi] onde e não existe: zeros de denominadores, de cos(u) em tg e sec, de sen(u) em cotg e csc, do argumento do ln. */
-function pontosSemValor(e: Expr, v: string, lo: number, hi: number, pontas: [boolean, boolean] = [true, true]): number[] {
+function pontosSemValor(e: Expr, v: string, lo: number, hi: number, pontas: [boolean, boolean] = [true, true], soPolinomios = false): number[] {
   const pontos: number[] = [];
   const zerosDe = (h: Expr): void => {
-    if (contem(h, v)) pontos.push(...zeros((t) => avaliar(h, { [v]: t }), lo, hi, pontas));
+    if (!contem(h, v)) return;
+    // polinômio: todas as raízes reais, sem depender de grade (um polo duplo entre dois pontos da grade escapava)
+    const p = comoPolinomio(h, v);
+    if (p) pontos.push(...raizesReais(p).filter((t) => t >= lo - FOLGA && t <= hi + FOLGA));
+    else if (!soPolinomios) pontos.push(...zeros((t) => avaliar(h, { [v]: t }), lo, hi, pontas));
   };
   const visitar = (n: Expr): void => {
     switch (n.tipo) {
@@ -319,6 +327,58 @@ function transbordou(e: Expr, valores: Record<string, number>): boolean {
   return false;
 }
 
+/**
+ * Todas as raízes reais de um polinômio. Entre dois pontos críticos seguidos (raízes da derivada)
+ * ele é monótono: ou troca de sinal uma vez, e a bisseção acha a raiz, ou não tem raiz ali.
+ * As raízes de multiplicidade par não trocam o sinal, mas são pontos críticos onde p vale zero.
+ */
+function raizesReais(p0: Polinomio): number[] {
+  const p = [...p0];
+  while (p.length > 1 && p[p.length - 1] === 0) p.pop();
+  const n = p.length - 1;
+  if (n <= 0) return [];
+  if (n === 1) return [-p[0]! / p[1]!];
+  const criticos = raizesReais(p.slice(1).map((c, i) => c * (i + 1))).sort((a, b) => a - b);
+  const cauchy = 1 + Math.max(...p.slice(0, n).map((c) => Math.abs(c / p[n]!)));
+  // o tamanho dos termos, medido a uma distância mínima de 0: na raiz 0 todos os termos somem juntos
+  const tamanho = (t: number): number => p.reduce((s, c, i) => s + Math.abs(c) * Math.max(Math.abs(t), 1e-6 * cauchy) ** i, 0);
+  const zera = (t: number): boolean => Math.abs(valorEm(p, t)) <= 1e-9 * tamanho(t);
+  const raizes = criticos.filter(zera);
+  const marcos = [-cauchy, ...criticos, cauchy];
+  for (let i = 0; i + 1 < marcos.length; i++) {
+    const [a, b] = [marcos[i]!, marcos[i + 1]!];
+    if ((i > 0 && zera(a)) || (i + 2 < marcos.length && zera(b))) continue;
+    if (Math.sign(valorEm(p, a)) * Math.sign(valorEm(p, b)) < 0) raizes.push(bissecao((t) => valorEm(p, t), a, b));
+  }
+  return unicos(raizes);
+}
+
+/** O número de máquina vizinho de t, para cima ou para baixo. */
+function vizinho(t: number, sentido: 1 | -1): number {
+  if (t === 0) return sentido * Number.MIN_VALUE;
+  const f = new Float64Array([t]);
+  const i = new BigInt64Array(f.buffer);
+  i[0] = i[0]! + BigInt(t > 0 === sentido > 0 ? 1 : -1);
+  return f[0]!;
+}
+
+/**
+ * A raiz achada por conta numérica erra o ponto por um fio (50000.12299999999 no lugar de
+ * 50000.123), e ali g ainda "existe", com um valor enorme. Procura-se, colado nela, o número
+ * onde g deixa mesmo de ter valor: é nele que os limites laterais de F são calculados.
+ */
+function afinar(g: Expr, v: string, c: number): number {
+  const semValor = (t: number): boolean => Number.isNaN(avaliar(g, { [v]: t }));
+  const candidatos = [c, Number(c.toPrecision(12)), Number(c.toPrecision(10)), Number(c.toPrecision(8)), Number(c.toFixed(9)), Number(c.toFixed(6))];
+  let [cima, baixo] = [c, c];
+  for (let k = 0; k < 4; k++) {
+    cima = vizinho(cima, 1);
+    baixo = vizinho(baixo, -1);
+    candidatos.push(cima, baixo);
+  }
+  return (candidatos.find(semValor) ?? c) + 0; // + 0 troca −0 por 0
+}
+
 /** Recusa a integral quando o integrando não tem valor real em parte do intervalo, como √x em [−1, 1]. */
 function exigirValor(e: Expr, v: string, lo: number, hi: number, excecoes: number[]): void {
   const n = 400;
@@ -342,7 +402,12 @@ function zeros(h: (t: number) => number, lo: number, hi: number, pontas: [boolea
   const xs = Array.from({ length: DIVISOES + 1 }, (_, i) => (i === DIVISOES ? hi : lo + ((hi - lo) * i) / DIVISOES));
   const ys = xs.map(h);
   const escala = ys.reduce((maior, y) => (Number.isFinite(y) ? Math.max(maior, Math.abs(y)) : maior), 0);
-  const pontaZerada = (i: number, y: number): boolean => ((i === 0 && pontas[0]) || (i === xs.length - 1 && pontas[1])) && Math.abs(y) <= 1e-12 * Math.max(1, escala);
+  // na ponta, "zero" se mede contra o vizinho: com x² indo até 10⁶, medir contra o maior valor fazia h(−1) = 1 contar como zero
+  const pontaZerada = (i: number, y: number): boolean => {
+    if (!((i === 0 && pontas[0]) || (i === xs.length - 1 && pontas[1]))) return false;
+    const vizinhoDaPonta = Math.abs(ys[i === 0 ? 1 : xs.length - 2] ?? 0);
+    return Math.abs(y) <= 1e-12 * Math.max(1, Number.isFinite(vizinhoDaPonta) ? Math.min(vizinhoDaPonta, escala) : escala);
+  };
   const achados: number[] = [];
   for (let i = 0; i < xs.length; i++) {
     const t = xs[i]!;
@@ -354,15 +419,11 @@ function zeros(h: (t: number) => number, lo: number, hi: number, pontas: [boolea
       continue;
     }
     if (depois !== undefined && depois !== 0 && Math.sign(depois) === -Math.sign(y)) achados.push(bissecao(h, t, xs[i + 1]!));
-    const minimoLocal =
-      antes !== undefined &&
-      depois !== undefined &&
-      Math.sign(antes) === Math.sign(y) &&
-      Math.sign(depois) === Math.sign(y) &&
-      Math.abs(y) <= Math.abs(antes) &&
-      Math.abs(y) <= Math.abs(depois);
+    // na primeira e na última célula só há vizinho de um lado: vale o lado que existe
+    const naoPassa = (viz: number | undefined): boolean => viz !== undefined && !(Math.sign(viz) === Math.sign(y) && Math.abs(y) <= Math.abs(viz));
+    const minimoLocal = (antes !== undefined || depois !== undefined) && !naoPassa(antes) && !naoPassa(depois);
     if (minimoLocal && Math.abs(y) < 1e-2 * escala) {
-      const m = minimoDoModulo(h, xs[i - 1]!, xs[i + 1]!);
+      const m = minimoDoModulo(h, xs[i - 1] ?? t, xs[i + 1] ?? t);
       if (Math.abs(h(m)) < 1e-12) achados.push(m);
     }
   }

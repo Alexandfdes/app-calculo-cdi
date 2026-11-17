@@ -728,7 +728,7 @@ function mostrarDefinida(texto: string): void {
   aoTerminarDefinida = () => {
     placar.hidden = false;
     placar.innerHTML = diverge
-      ? '<span>as somas crescem sem parar</span><strong class="diverge">diverge</strong>'
+      ? '<span>a área não é um número finito</span><strong class="diverge">diverge</strong>'
       : `<span>${r.noInfinito ? 'área até o infinito' : 'área exata pelo TFC'}</span><strong>${escapar(bonito(valor))}</strong>`;
   };
   mostrarNoGrafico(
@@ -861,7 +861,12 @@ function monotonia(a: AnaliseFuncao, janela: [number, number]): { texto: string;
   } catch {
     return null;
   }
-  const arred = (v: number): number => (Math.abs(v - Math.round(v)) < 1e-6 ? Math.round(v) : Math.round(v * 1e6) / 1e6);
+  // a virada achada por bisseção encosta no ponto notável da análise (vértice 1/3, e não 0.3333)
+  const arred = (v: number): number => {
+    const notavel = a.pontos.find((p) => Math.abs(p.x - v) < 1e-6);
+    if (notavel) return notavel.x;
+    return Math.abs(v - Math.round(v)) < 1e-9 ? Math.round(v) : v;
+  };
   const furos = a.dominio.furos ? a.assintotas.verticais : [];
   const trechos: { de: number; ate: number; deTexto: number; ateTexto: number; sobe: boolean }[] = [];
   for (const i of a.dominio.intervalos) {
@@ -906,7 +911,7 @@ function monotonia(a: AnaliseFuncao, janela: [number, number]): { texto: string;
         const deTexto = j === 0 && p === esquerda && i.de < esquerda ? i.de : p;
         const ateTexto = j + 2 === fronteiras.length && q === direita && i.ate > direita ? i.ate : q;
         const ultimo = trechos[trechos.length - 1];
-        if (ultimo && ultimo.sobe === sobe && Math.abs(ultimo.ate - p) < 1e-9) {
+        if (j > 0 && ultimo && ultimo.sobe === sobe && Math.abs(ultimo.ate - p) < 1e-9) {
           ultimo.ate = q;
           ultimo.ateTexto = ateTexto;
         } else {
@@ -917,8 +922,13 @@ function monotonia(a: AnaliseFuncao, janela: [number, number]): { texto: string;
   }
   if (trechos.length === 0) return null;
   const setas = trechos.map((t) => ({ x: (t.de + t.ate) / 2, sobe: t.sobe })).slice(0, 8);
-  if (a.tipo === 'trigonométrica' || trechos.length > 4) {
+  const mistura = trechos.some((t) => t.sobe) && trechos.some((t) => !t.sobe);
+  if (mistura && (a.tipo === 'trigonométrica' || trechos.length > 4)) {
     return { texto: 'sobe e desce alternadamente, a cada meio período', setas };
+  }
+  // a tangente: o mesmo sentido em todos os ramos, mas cada ramo é um intervalo à parte
+  if (!mistura && furos.length > 0) {
+    return { texto: `${trechos[0]!.sobe ? 'cresce' : 'decresce'} em cada intervalo do domínio`, setas };
   }
   const fmt = (v: number): string => (v === Number.NEGATIVE_INFINITY ? '−∞' : v === Number.POSITIVE_INFINITY ? '+∞' : numeroDaAnalise(a, v));
   const lista = (lado: boolean): string =>
@@ -943,7 +953,7 @@ function mostrarFuncao(texto: string): void {
   const ficha: [string, string, string][] = [
     ['Domínio', `D(f) = ${a.dominio.texto}`, 'dominio'],
     ['Imagem', `Im(f) = ${a.imagem.texto}`, 'imagem'],
-    ...(cresce ? [['Crescimento', cresce.texto, ''] as [string, string, string]] : []),
+    ...(cresce && !a.caracteristicas.some((c) => c.nome === 'Crescimento') ? [['Crescimento', cresce.texto, ''] as [string, string, string]] : []),
     ...a.caracteristicas.map((c): [string, string, string] => [c.nome, c.valor, '']),
   ];
   const extra = `
@@ -1040,7 +1050,12 @@ function conferirLimite(r: ResultadoLimite): string {
     return ok ? `✓ Conferido: em x = ${curto(t)}, f(x) = ${curto(f(t))}, já colado no limite.` : '';
   }
   const h = 1e-6 * Math.max(1, Math.abs(r.a));
-  const [esq, dir] = [perto(f(r.a - h), r.esquerda), perto(f(r.a + h), r.direita)];
+  // √x·ln x chega devagar: se a um milionésimo ainda não colou, olha dez mil vezes mais perto
+  const lado = (sinal: 1 | -1, alvo: ValorLimite | undefined): boolean | null => {
+    const primeiro = perto(f(r.a + sinal * h), alvo);
+    return primeiro === false ? perto(f(r.a + sinal * h * 1e-4), alvo) : primeiro;
+  };
+  const [esq, dir] = [lado(-1, r.esquerda), lado(1, r.direita)];
   if (esq === null && dir === null) return '';
   if (esq === false || dir === false) return 'Atenção: bem perto do ponto, a tabela de valores não confirmou o resultado.';
   return '✓ Conferido na tabela: a um milionésimo do ponto, f(x) já está colado no valor de cada limite lateral.';
@@ -1355,7 +1370,17 @@ const MODO_NOME: Record<Modo, string> = { funcao: 'função', limite: 'limite', 
 let gravarProxima = false;
 let historico: ItemHistorico[] = [];
 try {
-  historico = JSON.parse(localStorage.getItem(CHAVE_HISTORICO) ?? '[]') as ItemHistorico[];
+  const salvo: unknown = JSON.parse(localStorage.getItem(CHAVE_HISTORICO) ?? '[]');
+  const texto = (v: unknown): boolean => v === undefined || typeof v === 'string';
+  if (Array.isArray(salvo)) {
+    historico = (salvo as unknown[])
+      .filter((h): h is ItemHistorico => {
+        if (typeof h !== 'object' || h === null) return false;
+        const item = h as Record<string, unknown>;
+        return typeof item.modo === 'string' && item.modo in MODO_NOME && typeof item.f === 'string' && texto(item.ponto) && texto(item.a) && texto(item.b);
+      })
+      .slice(0, 8);
+  }
 } catch {
   historico = [];
 }
