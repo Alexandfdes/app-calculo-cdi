@@ -95,3 +95,13 @@ describe('Segunda caça: integrais antes recusadas', () => {
     }
   });
 });
+
+describe('Terceira caça', () => {
+  it('conjugado também com soma: √(x² + x) + x em −∞ = −1/2', () => {
+    expect(calcularLimite('raiz(x^2+x)+x', '-inf').limite).toBeCloseTo(-0.5, 12);
+  });
+
+  it('sen(3x)/(5x) em 0 sai 0,6 sem ruído', () => {
+    expect(calcularLimite('sen(3*x)/(5*x)', '0').limite).toBe(0.6);
+  });
+});

@@ -296,8 +296,9 @@ function limite(e: Expr, alvo: Alvo, ctx: Contexto): Valor {
     if (l) return l;
   }
   // ∞ − ∞ com raiz: o conjugado; e, no infinito, a ordem de crescimento
-  if (e.tipo === 'sub' && v.forma === '∞ − ∞') {
-    const c = conjugadoNoInfinito(e.a, e.b, alvo, dentro);
+  // A + B com B indo a −∞ é A − (−B): o conjugado vale igual (√(x² + x) + x em −∞)
+  if ((e.tipo === 'sub' || e.tipo === 'soma') && v.forma === '∞ − ∞') {
+    const c = conjugadoNoInfinito(e.a, e.tipo === 'sub' ? e.b : simplificar(neg(e.b)), alvo, dentro);
     if (c) return c;
   }
   if ('infinito' in alvo) {
@@ -1249,8 +1250,14 @@ function conjugadoNoInfinito(A: Expr, B: Expr, alvo: Alvo, ctx: Contexto): Valor
 /** Converte para o valor público; forma indeterminada sem técnica vira aviso. */
 function publico(v: Valor): ValorLimite {
   switch (v.tipo) {
-    case 'finito':
+    case 'finito': {
+      // 0.6000000000000001 vira 0.6: ruído de ponto flutuante perto de uma fração simples
+      for (let q = 1; q <= 1000; q++) {
+        const p = Math.round(v.v * q);
+        if (Math.abs(v.v * q - p) < 1e-9 * q * Math.max(1, Math.abs(v.v))) return p / q;
+      }
       return v.v;
+    }
     case 'infinito':
       return v.sinal > 0 ? '+∞' : '-∞';
     case 'oscila':

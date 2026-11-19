@@ -218,7 +218,7 @@ describe('Limites que antes ficavam sem técnica', () => {
 
   it('sem fator equivalente, continua recusando em vez de chutar', () => {
     expect(() => calcularLimite('x*sen(x)', 'inf')).toThrow(ErroDeEntrada);
-    expect(() => calcularLimite('sqrt(x^2 + x) + x', '-inf')).toThrow(ErroDeEntrada);
+    // √(x² + x) + x em −∞ agora sai pelo conjugado: −1/2 (testado na terceira caça)
   });
 });
 
