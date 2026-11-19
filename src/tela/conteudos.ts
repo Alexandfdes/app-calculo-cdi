@@ -1130,8 +1130,14 @@ export const LAB_FUNCOES: TipoNoLab[] = [
     rotulo: 'Exponencial',
     forma: () => 'f(x) = a^x',
     parametros: [{ nome: 'a', min: 0.2, max: 3, passo: 0.1, inicial: 2 }],
-    montar: (p) => `${valor(p, 'a')}^x`,
-    foraDoTipo: (p) => (valor(p, 'a') === 1 ? 'Com a = 1, 1ˣ = 1 para todo x: vira constante. A exponencial exige a > 0 e a ≠ 1.' : null),
+    // base negativa entre parênteses: -2^x seria −(2ˣ), outra função
+    montar: (p) => (valor(p, 'a') < 0 ? `(${valor(p, 'a')})^x` : `${valor(p, 'a')}^x`),
+    foraDoTipo: (p) =>
+      valor(p, 'a') === 1
+        ? 'Com a = 1, 1ˣ = 1 para todo x: vira constante. A exponencial exige a > 0 e a ≠ 1.'
+        : valor(p, 'a') <= 0
+          ? 'Com a ≤ 0, aˣ não é uma função real (como (−2)^(1/2)). A exponencial exige a > 0 e a ≠ 1.'
+          : null,
     janela: [-4, 4, -1.5, 8.5],
   },
   {
@@ -1141,7 +1147,11 @@ export const LAB_FUNCOES: TipoNoLab[] = [
     parametros: [{ nome: 'a', min: 0.2, max: 4, passo: 0.1, inicial: 2 }],
     montar: (p) => `log(x, ${valor(p, 'a')})`,
     foraDoTipo: (p) =>
-      valor(p, 'a') === 1 ? 'Com a = 1, nenhum expoente leva 1 a outro número: log₁ x não existe. A base precisa ser positiva e diferente de 1.' : null,
+      valor(p, 'a') === 1
+        ? 'Com a = 1, nenhum expoente leva 1 a outro número: log₁ x não existe. A base precisa ser positiva e diferente de 1.'
+        : valor(p, 'a') <= 0
+          ? 'Com a ≤ 0, logₐ x não existe. A base precisa ser positiva e diferente de 1.'
+          : null,
     janela: [-1, 9, -5, 5],
   },
   {
